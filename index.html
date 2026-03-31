@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TradingBOT</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{'s0':'#0d1117','s1':'#161b22','s2':'#1c2333','s3':'#242d3d','bd':'#30363d','t1':'#e6edf3','t2':'#8b949e','blu':'#58a6ff','grn':'#3fb950','red':'#f85149','ylw':'#d29922','pur':'#bc8cff'}}}}</script>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font-family:'Courier New',monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}.pulse{animation:pulse 2s infinite}
+@keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}.scroll-track{animation:scroll 40s linear infinite}.scroll-track:hover{animation-play-state:paused}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.panel:hover{border-color:#444c56}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:#1c2333;border-bottom:1px solid #30363d;min-height:28px;flex-shrink:0}
+.ph span,.ph .title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#8b949e}
+.pb{flex:1;overflow:auto;position:relative;min-height:0}
+.btn{border:none;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-b{background:#58a6ff;color:#fff}.btn-g{background:#3fb950;color:#fff}.btn-r{background:#f85149;color:#fff}
+.btn:hover{opacity:.85}
+.tf{padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#8b949e;background:none;border:1px solid transparent;cursor:pointer}
+.tf:hover{color:#e6edf3;background:#1c2333}.tf.on{color:#58a6ff;border-color:#58a6ff;background:rgba(88,166,255,.1)}
+.inp{background:#242d3d;border:1px solid #30363d;border-radius:4px;padding:4px 8px;font-size:11px;color:#e6edf3;font-family:inherit;width:100%}.inp:focus{outline:none;border-color:#58a6ff}
+select.inp{appearance:auto}
+.wl{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:12px;transition:background .15s}
+.wl:hover{background:#1c2333}.wl.on{background:#242d3d;border-left:2px solid #58a6ff}
+.cc{font-size:10px;font-weight:600;text-align:center;border-radius:3px;padding:5px 2px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s}
+.cc:hover{transform:scale(1.1);box-shadow:0 0 8px rgba(88,166,255,.3)}
+.sig{border-left:3px solid #58a6ff;background:#1c2333;border-radius:4px;padding:6px 8px;margin-bottom:5px;font-size:11px}
+.sig.bull{border-left-color:#3fb950}.sig.bear{border-left-color:#f85149}
+.nav-tab{padding:8px 16px;font-size:12px;font-weight:600;color:#8b949e;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;text-transform:uppercase;letter-spacing:.5px}
+.nav-tab:hover{color:#e6edf3}.nav-tab.on{color:#58a6ff;border-bottom-color:#58a6ff}
+.metric{display:flex;justify-content:space-between;padding:4px 8px;background:#1c2333;border-radius:4px;font-size:11px;margin-bottom:3px}
+.search-box{position:relative}.search-drop{position:absolute;top:100%;left:0;right:0;background:#1c2333;border:1px solid #30363d;border-radius:0 0 6px 6px;max-height:220px;overflow-y:auto;z-index:200;display:none}
+.search-drop.open{display:block}.search-item{padding:6px 10px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;transition:background .1s}.search-item:hover{background:#242d3d}
+</style>
+</head>
+<body class="dark">
+
+<!-- TICKER -->
+<div class="bg-s1 border-b border-bd overflow-hidden h-6 flex items-center flex-shrink-0">
+<div id="ticker" class="flex items-center whitespace-nowrap scroll-track gap-6 px-4 text-xs"><span class="text-t2">Loading prices...</span></div>
+</div>
+
+<!-- HEADER -->
+<header class="bg-s1 border-b border-bd px-4 py-1 flex items-center justify-between flex-shrink-0 z-50">
+<div class="flex items-center gap-3">
+  <span class="text-base font-bold tracking-wide"><span class="text-blu">TRADING</span><span class="text-t2">BOT</span></span>
+  <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw">PAPER</span>
+  <button id="auth-btn" class="text-xs border border-bd rounded px-2 py-0.5 text-t2 hover:text-blu hover:border-blu" onclick="document.getElementById('auth-overlay').style.display='flex'">Sign In</button>
+</div>
+<div class="flex items-center gap-5 text-xs">
+  <div class="text-right"><div class="text-t2" style="font-size:9px">Portfolio</div><div id="h-port" class="text-grn font-bold">$100,000.00</div></div>
+  <div class="text-right"><div class="text-t2" style="font-size:9px">Day P&L</div><div id="h-pnl" class="text-grn font-bold">$0.00</div></div>
+  <div class="text-right"><div class="text-t2" style="font-size:9px">Positions</div><div id="h-pos" class="font-bold">0</div></div>
+  <div class="text-right"><div class="text-t2" style="font-size:9px">Bot</div><div id="h-bot" class="text-red font-bold">OFF</div></div>
+</div>
+</header>
+
+<!-- MAIN NAV -->
+<nav class="bg-s1 border-b border-bd flex items-center px-4 flex-shrink-0">
+<button class="nav-tab on" onclick="showPage('dashboard',this)">Dashboard</button>
+<button class="nav-tab" onclick="showPage('bot',this)">Trading Bot</button>
+<button class="nav-tab" onclick="showPage('analysis',this)">Market Analysis</button>
+</nav>
+
+<!-- ===== PAGES ===== -->
+<div class="flex-1 overflow-hidden">
+
+<!-- PAGE: DASHBOARD -->
+<div id="page-dashboard" class="h-full flex">
+  <!-- Sidebar -->
+  <aside class="w-48 bg-s1 border-r border-bd flex flex-col flex-shrink-0 overflow-y-auto">
+    <div class="flex border-b border-bd">
+      <button class="nav-tab on flex-1 py-2" style="font-size:10px" onclick="switchMkt('crypto',this)">Crypto</button>
+      <button class="nav-tab flex-1 py-2" style="font-size:10px" onclick="switchMkt('stocks',this)">Stocks</button>
+    </div>
+    <div class="p-2 search-box">
+      <input id="search" class="inp" placeholder="Search any asset..." oninput="doSearch(this.value)" onfocus="doSearch(this.value)"/>
+      <div id="search-drop" class="search-drop"></div>
+    </div>
+    <div class="p-2 flex-1 overflow-y-auto">
+      <div class="flex justify-between mb-1"><span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span></div>
+      <div id="watchlist"></div>
+    </div>
+    <div class="p-2 border-t border-bd">
+      <div class="text-t2 uppercase font-bold mb-1" style="font-size:9px;letter-spacing:1px">Market Pulse</div>
+      <div id="pulse" class="text-xs space-y-0.5"></div>
+    </div>
+  </aside>
+  <!-- Charts -->
+  <div class="flex-1 p-2 grid gap-2 overflow-auto" style="grid-template-columns:2fr 1fr;grid-template-rows:2fr 1fr 1fr">
+    <div class="panel row-span-2" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
+    <div class="panel" id="p-corr"><div class="ph"><span>Correlation Matrix</span></div><div class="pb p-2" id="c-corr"></div></div>
+    <div class="panel" id="p-sig"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
+    <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
+    <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
+    <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
+  </div>
+</div>
+
+<!-- PAGE: BOT -->
+<div id="page-bot" class="h-full overflow-y-auto p-4" style="display:none">
+<div class="max-w-6xl mx-auto grid grid-cols-3 gap-3">
+  <!-- Bot Control -->
+  <div class="panel col-span-1">
+    <div class="ph"><span>Bot Control</span></div>
+    <div class="pb p-3 space-y-3 overflow-y-auto">
+      <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
+      <div class="flex gap-2">
+        <button id="btn-start" class="btn btn-g flex-1" onclick="startBot()">Start Bot</button>
+        <button id="btn-stop" class="btn btn-r flex-1" onclick="stopBot()" style="display:none">Stop Bot</button>
+        <button class="btn btn-r" onclick="killAll()" style="font-size:9px;padding:4px 8px" title="Close all positions">KILL</button>
+      </div>
+      <div id="bot-warn" class="text-xs text-red bg-s3 rounded p-2 hidden"></div>
+      <hr class="border-bd"/>
+      <div><label class="text-t2 text-xs block mb-1">Strategy</label>
+        <select id="strat-sel" class="inp" onchange="onStratChange()">
+          <option value="hybrid">Smart Hybrid (Recommended)</option>
+          <option value="correlation">Correlation Trading</option>
+          <option value="meanrev">Mean Reversion (RSI)</option>
+          <option value="momentum">Momentum (SMA Cross)</option>
+          <option value="dca">DCA</option>
+        </select>
+        <div id="strat-info" class="text-t2 text-xs mt-1 leading-relaxed"></div>
+      </div>
+      <hr class="border-bd"/>
+      <div><label class="text-t2 text-xs block mb-1">Fee Profile</label>
+        <select id="fee-sel" class="inp"><option value="coinbase_adv">Coinbase Advanced</option><option value="binance_us">Binance.US</option><option value="kraken">Kraken</option><option value="alpaca">Alpaca</option><option value="robinhood">Robinhood</option><option value="zero_fee">No Fees (Testing)</option></select>
+      </div>
+      <hr class="border-bd"/>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">Risk Controls</div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="text-t2" style="font-size:9px">Position Size %</label><input type="number" id="r-size" value="10" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Stop Loss %</label><input type="number" id="r-sl" value="5" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Take Profit %</label><input type="number" id="r-tp" value="10" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Max Positions</label><input type="number" id="r-max" value="5" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Daily Loss Limit $</label><input type="number" id="r-dll" value="2000" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Trailing Stop %</label><input type="number" id="r-trail" value="3" class="inp"/></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Portfolio & Positions -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Portfolio & Positions</span></div>
+    <div class="pb p-3 overflow-y-auto">
+      <div class="grid grid-cols-4 gap-3 mb-3">
+        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Portfolio Value</div><div id="pf-val" class="text-grn font-bold text-lg">$100,000</div></div>
+        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Total P&L</div><div id="pf-pnl" class="text-grn font-bold text-lg">$0.00</div></div>
+        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Total Fees Paid</div><div id="pf-fees" class="text-ylw font-bold text-lg">$0.00</div></div>
+        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Win Rate</div><div id="pf-wr" class="text-blu font-bold text-lg">--</div></div>
+      </div>
+      <div class="text-t2 text-xs font-bold uppercase mb-2">Open Positions</div>
+      <div id="pos-list" class="space-y-1 mb-3"><div class="text-t2 text-xs text-center py-4">No open positions</div></div>
+      <div class="text-t2 text-xs font-bold uppercase mb-2">Next Projected Moves</div>
+      <div id="next-moves" class="space-y-1 mb-3"></div>
+      <div class="text-t2 text-xs font-bold uppercase mb-2">Trade History</div>
+      <div id="trade-log" class="space-y-1 max-h-48 overflow-y-auto"><div class="text-t2 text-xs text-center py-2">No trades yet</div></div>
+    </div>
+  </div>
+
+  <!-- Bot Activity Log -->
+  <div class="panel col-span-3">
+    <div class="ph"><span>Bot Activity Log</span></div>
+    <div class="pb p-3 overflow-y-auto max-h-48" id="bot-log"><div class="text-t2 text-xs text-center">Start the bot to see activity here</div></div>
+  </div>
+</div>
+</div>
+
+<!-- PAGE: ANALYSIS -->
+<div id="page-analysis" class="h-full overflow-y-auto p-4" style="display:none">
+<div class="max-w-5xl mx-auto grid grid-cols-2 gap-3">
+  <div class="panel col-span-2">
+    <div class="ph"><span>Market Analysis & Strategy Recommendation</span></div>
+    <div class="pb p-4" id="c-analysis"><div class="text-t2 text-center py-8">Loading market analysis...</div></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><span>Performance Metrics</span></div>
+    <div class="pb p-3" id="c-metrics"><div class="text-t2 text-xs text-center py-4">Start trading to see metrics</div></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><span>Scenario Simulator</span></div>
+    <div class="pb p-3 overflow-y-auto">
+      <p class="text-t2 text-xs mb-2">Backtest strategies against historical data to see projected outcomes.</p>
+      <div class="grid grid-cols-2 gap-2 mb-2">
+        <div><label class="text-t2" style="font-size:9px">Strategy</label><select id="sim-strat" class="inp"><option value="meanrev">Mean Reversion</option><option value="momentum">Momentum</option><option value="bollinger">Bollinger Bounce</option></select></div>
+        <div><label class="text-t2" style="font-size:9px">Timeframe</label><select id="sim-days" class="inp"><option value="30">30 days</option><option value="90" selected>90 days</option></select></div>
+      </div>
+      <button class="btn btn-b w-full mb-2" onclick="runSim()">Run Backtest</button>
+      <div id="sim-out"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div><!-- end pages -->
+
+<!-- STATUS -->
+<footer class="bg-s1 border-t border-bd px-4 py-0.5 flex items-center justify-between text-xs text-t2 flex-shrink-0">
+<span class="flex items-center gap-1.5"><span id="st-dot" class="w-2 h-2 rounded-full bg-ylw pulse"></span><span id="st-txt">Connecting...</span></span>
+<span id="st-clk"></span>
+</footer>
+
+<!-- AUTH MODAL -->
+<div id="auth-overlay" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center" style="display:none">
+<div class="bg-s1 border border-bd rounded-lg p-6 w-80">
+  <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">Sign In to TradingBOT</span><button onclick="document.getElementById('auth-overlay').style.display='none'" class="text-t2 hover:text-t1 text-lg">&times;</button></div>
+  <div id="auth-error" class="text-red text-xs mb-2 hidden"></div>
+  <input id="auth-email" class="inp mb-2" placeholder="Email" type="email"/>
+  <input id="auth-pass" class="inp mb-3" placeholder="Password" type="password"/>
+  <button class="btn btn-b w-full mb-2" onclick="doSignIn()">Sign In</button>
+  <button class="btn w-full mb-2" style="background:#242d3d;color:#e6edf3" onclick="doSignUp()">Create Account</button>
+  <div class="flex gap-2">
+    <button class="btn flex-1" style="background:#242d3d;color:#e6edf3;font-size:10px" onclick="SB.signInWithGithub()">GitHub</button>
+    <button class="btn flex-1" style="background:#242d3d;color:#e6edf3;font-size:10px" onclick="SB.signInWithGoogle()">Google</button>
+  </div>
+  <p class="text-t2 text-xs mt-3 text-center">Sign in to sync watchlists, trades, and bot settings across devices.</p>
+</div>
+</div>
+
+<script src="js/fees.js"></script>
+<script src="js/risk.js"></script>
+<script src="js/simulator.js"></script>
+<script src="js/connectivity.js"></script>
+<script src="js/supabase-client.js"></script>
+<script>
+(function(){
+'use strict';
+
+// ===================== DATA =====================
+var CRYPTO=[
+  {id:'bitcoin',sym:'BTC',name:'Bitcoin'},{id:'ethereum',sym:'ETH',name:'Ethereum'},
+  {id:'solana',sym:'SOL',name:'Solana'},{id:'binancecoin',sym:'BNB',name:'BNB'},
+  {id:'ripple',sym:'XRP',name:'XRP'},{id:'cardano',sym:'ADA',name:'Cardano'},
+];
+var STOCKS=[
+  {id:'spy',sym:'SPY',name:'S&P 500 ETF',base:525,vol:.012},{id:'qqq',sym:'QQQ',name:'NASDAQ 100',base:450,vol:.015},
+  {id:'iwm',sym:'IWM',name:'Russell 2000',base:212,vol:.018},{id:'aapl',sym:'AAPL',name:'Apple',base:195,vol:.02},
+  {id:'tsla',sym:'TSLA',name:'Tesla',base:178,vol:.035},{id:'nvda',sym:'NVDA',name:'NVIDIA',base:880,vol:.03},
+  {id:'msft',sym:'MSFT',name:'Microsoft',base:420,vol:.018},{id:'amzn',sym:'AMZN',name:'Amazon',base:185,vol:.025},
+  {id:'googl',sym:'GOOGL',name:'Alphabet',base:175,vol:.022},{id:'meta',sym:'META',name:'Meta',base:510,vol:.025},
+  {id:'amd',sym:'AMD',name:'AMD',base:165,vol:.032},{id:'jpm',sym:'JPM',name:'JPMorgan',base:200,vol:.016},
+  {id:'coin',sym:'COIN',name:'Coinbase',base:225,vol:.04},{id:'pltr',sym:'PLTR',name:'Palantir',base:22,vol:.04},
+];
+var CORR_C={'BTC-ETH':.87,'BTC-SOL':.79,'BTC-BNB':.72,'BTC-XRP':.65,'ETH-SOL':.82,'ETH-BNB':.68,'SOL-BNB':.58,'BNB-XRP':.55};
+var CORR_S={'SPY-QQQ':.96,'SPY-IWM':.91,'SPY-AAPL':.82,'QQQ-NVDA':.85,'AAPL-MSFT':.78,'TSLA-NVDA':.62};
+
+var STRATS={
+  hybrid:{name:'Smart Hybrid',desc:'Combines multiple strategies simultaneously. Uses RSI for entry timing, SMA for trend confirmation, and correlation for asset selection. Only enters trades when at least 2 strategies agree.'},
+  correlation:{name:'Correlation',desc:'Buys the lagging asset when correlated pairs diverge, expecting mean reversion.'},
+  meanrev:{name:'Mean Reversion',desc:'Buys when RSI < 30 (oversold), sells when RSI > 70 (overbought).'},
+  momentum:{name:'Momentum',desc:'Buys on golden cross (fast SMA > slow SMA), sells on death cross.'},
+  dca:{name:'DCA',desc:'Invests fixed amount at regular intervals regardless of price.'},
+};
+
+// ===================== STATE =====================
+var mkt='crypto',prices={},ohlc={},stkData={},chrt={},ser={},sel='bitcoin',searchTO=null;
+var wl=[];// custom watchlist
+var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
+var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[]};
+var apiQ=[],apiOn=false;
+var tileDays={main:7,c2:7,c3:7};
+var tileAsset={main:'bitcoin',c2:'ethereum',c3:'solana'};
+
+// ===================== API QUEUE =====================
+function qApi(url){return new Promise(function(ok,no){apiQ.push({u:url,ok:ok,no:no});if(!apiOn)runQ()});}
+function runQ(){if(!apiQ.length){apiOn=false;return;}apiOn=true;var i=apiQ.shift();
+  fetch(i.u).then(function(r){return r.json()}).then(function(d){i.ok(d);setTimeout(runQ,2200)}).catch(function(e){i.no(e);setTimeout(runQ,2200)});}
+
+function cgPr(){var ids=(mkt==='crypto'?getWL():[]).map(function(a){return a.id}).join(',');
+  if(!ids)return Promise.resolve({});
+  return qApi('https://api.coingecko.com/api/v3/simple/price?ids='+ids+'&vs_currencies=usd&include_24hr_change=true');}
+function cgOHLC(id,days){return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
+  return Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[]})}
+
+// ===================== STOCK GEN =====================
+function genStk(a,bars){bars=bars||168;var d=[],p=a.base,s=hash(a.sym);
+  var rnd=function(){s=(s*16807)%2147483647;return s/2147483647};
+  var rn=function(){return Math.sqrt(-2*Math.log(rnd()+.0001))*Math.cos(6.2832*rnd())};
+  var now=Math.floor(Date.now()/1000),st=now-bars*3600;
+  for(var i=0;i<bars;i++){var t=st+i*3600;var ret=(.0001-.5*a.vol*a.vol)/24+a.vol*Math.sqrt(1/24)*rn();
+    var o=p;p*=Math.exp(ret);var c=p;var rng=Math.abs(c-o)+p*a.vol*.02*Math.abs(rn());
+    var h=Math.max(o,c)+rng*rnd()*.5,l=Math.min(o,c)-rng*rnd()*.5;
+    d.push({time:t,open:+o.toFixed(2),high:+h.toFixed(2),low:+l.toFixed(2),close:+c.toFixed(2)});}return d;}
+function hash(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))&0x7fffffff;return h||1}
+function dToB(d){return d<=7?168:d<=30?720:d<=90?2160:8760}
+
+// ===================== CHARTS =====================
+function mkChart(id){var el=document.getElementById(id);if(!el)return null;el.innerHTML='';
+  var r=el.getBoundingClientRect();if(r.width<10||r.height<10)return null;
+  return LightweightCharts.createChart(el,{width:r.width,height:r.height,
+    layout:{background:{type:'solid',color:'transparent'},textColor:'#8b949e',fontSize:10},
+    grid:{vertLines:{color:'rgba(48,54,61,.3)'},horzLines:{color:'rgba(48,54,61,.3)'}},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale:{borderColor:'#30363d',scaleMargins:{top:.08,bottom:.15}},
+    timeScale:{borderColor:'#30363d',timeVisible:true,secondsVisible:false}});}
+
+function loadCh(cid,data,key){if(chrt[key])try{chrt[key].remove()}catch(e){}
+  var ch=mkChart(cid);if(!ch||!data||!data.length)return;chrt[key]=ch;
+  ser[key]=ch.addCandlestickSeries({upColor:'#3fb950',downColor:'#f85149',wickUpColor:'#3fb950',wickDownColor:'#f85149',borderUpColor:'#3fb950',borderDownColor:'#f85149'});
+  ser[key].setData(data);
+  if(data.length>20){var sma=[];for(var i=19;i<data.length;i++){var s=0;for(var j=0;j<20;j++)s+=data[i-j].close;sma.push({time:data[i].time,value:s/20});}
+    var ls=ch.addLineSeries({color:'#58a6ff',lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});ls.setData(sma);}
+  var vs=ch.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'});ch.priceScale('vol').applyOptions({scaleMargins:{top:.85,bottom:0}});
+  vs.setData(data.map(function(d){return{time:d.time,value:d.volume||Math.abs(d.close-d.open)*1e6*(Math.random()+.5),color:d.close>=d.open?'rgba(63,185,80,.2)':'rgba(248,81,73,.2)'}}));
+  ch.timeScale().fitContent();}
+
+function resizeCharts(){Object.keys(chrt).forEach(function(k){var el=document.getElementById('c-'+k);
+  if(el&&chrt[k]){var r=el.getBoundingClientRect();if(r.width>10&&r.height>10)chrt[k].resize(r.width,r.height)}});}
+
+// ===================== TILE LOADING =====================
+function loadTile(key,assetId,days){
+  var cid='c-'+key;tileAsset[key]=assetId;tileDays[key]=days;
+  var el=document.getElementById(cid);if(el)el.innerHTML='<div class="flex items-center justify-center h-full"><div class="w-5 h-5 border-2 border-bd border-t-blu rounded-full spin"></div></div>';
+  var a=findA(assetId);if(a)setText('t-'+key,a.sym+'/USD');
+  if(mkt==='crypto'){
+    cgOHLC(assetId,days).then(function(d){ohlc[assetId]=d;loadCh(cid,d,key);setPr('pr-'+key,assetId);}).catch(function(){if(el)el.innerHTML='<div class="flex items-center justify-center h-full text-red text-xs">Failed — retrying...</div>';setTimeout(function(){loadTile(key,assetId,days)},5000);});
+  }else{
+    if(a&&a.base){stkData[assetId]=genStk(a,dToB(days));var dd=stkData[assetId];prices[assetId]={usd:dd[dd.length-1].close,usd_24h_change:((dd[dd.length-1].close-dd[0].open)/dd[0].open)*100};}
+    loadCh(cid,stkData[assetId],key);setPr('pr-'+key,assetId);
+  }
+}
+
+window.tfClick=function(key,days,btn){btn.parentElement.querySelectorAll('.tf').forEach(function(b){b.classList.remove('on')});btn.classList.add('on');loadTile(key,tileAsset[key],days);};
+
+// ===================== LOAD ALL =====================
+function loadAll(){
+  var w=getWL();tileAsset={main:w[0].id,c2:(w[1]||w[0]).id,c3:(w[2]||w[0]).id};
+  if(mkt==='crypto'){
+    cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();
+      loadTile('main',tileAsset.main,tileDays.main);
+      // stagger other tiles
+      setTimeout(function(){loadTile('c2',tileAsset.c2,tileDays.c2)},2500);
+      setTimeout(function(){loadTile('c3',tileAsset.c3,tileDays.c3)},5000);
+      setTimeout(function(){updateInd();setStatus('ok','CoinGecko — Live')},6000);
+    }).catch(function(e){console.error(e);setStatus('err','API error — retrying');setTimeout(loadAll,15000);});
+  }else{
+    w.forEach(function(a){var st=findA(a.id);if(st&&st.base&&!stkData[a.id]){stkData[a.id]=genStk(st,168);var d=stkData[a.id];prices[a.id]={usd:d[d.length-1].close,usd_24h_change:((d[d.length-1].close-d[0].open)/d[0].open)*100}}});
+    loadTile('main',tileAsset.main,7);loadTile('c2',tileAsset.c2,7);loadTile('c3',tileAsset.c3,7);
+    updateUI();updateInd();setStatus('ok','Stocks — Simulated');
+  }
+}
+
+// ===================== UI UPDATES =====================
+function updateUI(){updateTicker();updateWL();updatePulse();updateCorr();updateSig();updateHdr();updatePos();updateAnalysis();}
+
+function updateTicker(){var el=document.getElementById('ticker');if(!el)return;
+  var items=getWL().map(function(a){var p=prOf(a.id),ch=chOf(a.id);if(!p)return'';var u=ch>=0;
+    return'<span class="inline-flex items-center gap-2 px-3"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean).join('<span class="text-bd">|</span>');
+  el.innerHTML=items+'<span class="px-8"></span>'+items;}
+
+function updateWL(){var el=document.getElementById('watchlist');if(!el)return;
+  el.innerHTML=getWL().map(function(a){var p=prOf(a.id),ch=chOf(a.id),u=ch>=0,on=a.id===sel;
+    var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];var sp=spark(d,u);
+    var isCustom=wl.some(function(w){return w.id===a.id});
+    return'<div class="wl'+(on?' on':'')+'" onclick="_sel(\''+a.id+'\')"><div><div class="font-bold text-t1 flex items-center gap-1">'+a.sym+(isCustom?'<span class="text-t2 cursor-pointer hover:text-red" onclick="event.stopPropagation();rmWL(\''+a.id+'\')" style="font-size:10px">&times;</span>':'')+'</div><div class="text-t2" style="font-size:9px">'+a.name+'</div></div><div class="text-right flex items-center gap-1">'+sp+'<div><div class="font-bold" style="font-size:11px;font-variant-numeric:tabular-nums">$'+fp(p)+'</div><div class="'+(u?'text-grn':'text-red')+'" style="font-size:9px;font-variant-numeric:tabular-nums">'+(u?'+':'')+ch.toFixed(2)+'%</div></div></div></div>';}).join('');}
+
+function spark(d,u){if(!d||d.length<10)return'';var r=d.slice(-24),c=r.map(function(x){return x.close}),mn=Math.min.apply(null,c),mx=Math.max.apply(null,c),rg=mx-mn||1,w=36,h=12;
+  var pts=c.map(function(v,i){return(i/(c.length-1)*w).toFixed(1)+','+(h-((v-mn)/rg*h)).toFixed(1)}).join(' ');
+  return'<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts+'" fill="none" stroke="'+(u?'#3fb950':'#f85149')+'" stroke-width="1.2"/></svg>';}
+
+function updatePulse(){var el=document.getElementById('pulse');if(!el)return;var items;
+  if(mkt==='crypto'){var bc=chOf('bitcoin'),ec=chOf('ethereum');items=[{l:'BTC',v:bc?(bc>=0?'+':'')+bc.toFixed(2)+'%':'--',c:bc>=0?'text-grn':'text-red'},{l:'ETH',v:ec?(ec>=0?'+':'')+ec.toFixed(2)+'%':'--',c:ec>=0?'text-grn':'text-red'},{l:'BTC/ETH',v:'0.87',c:'text-grn'},{l:'Regime',v:'Risk-On',c:'text-grn'}];
+  }else{var sc=chOf('spy'),ic=chOf('iwm');items=[{l:'SPY',v:sc?(sc>=0?'+':'')+sc.toFixed(2)+'%':'--',c:sc>=0?'text-grn':'text-red'},{l:'IWM',v:ic?(ic>=0?'+':'')+ic.toFixed(2)+'%':'--',c:ic>=0?'text-grn':'text-red'},{l:'Regime',v:ic>sc?'Risk-On':'Risk-Off',c:ic>sc?'text-grn':'text-ylw'}];}
+  el.innerHTML=items.map(function(i){return'<div class="flex justify-between"><span class="text-t2">'+i.l+'</span><span class="font-bold '+i.c+'">'+i.v+'</span></div>'}).join('');}
+
+function updateCorr(){var el=document.getElementById('c-corr');if(!el)return;var a=getAssets().slice(0,5),co=mkt==='crypto'?CORR_C:CORR_S,sy=a.map(function(x){return x.sym}),n=sy.length;
+  var h='<div style="display:grid;grid-template-columns:30px repeat('+n+',1fr);grid-template-rows:18px repeat('+n+',1fr);gap:2px;height:100%"><div></div>';
+  sy.forEach(function(s){h+='<div style="font-size:9px;font-weight:700;color:#8b949e;display:flex;align-items:center;justify-content:center">'+s+'</div>'});
+  sy.forEach(function(r,ri){h+='<div style="font-size:9px;font-weight:700;color:#8b949e;display:flex;align-items:center;justify-content:flex-end;padding-right:3px">'+r+'</div>';
+    sy.forEach(function(c,ci){var v=ri===ci?1:(co[r+'-'+c]||co[c+'-'+r]||0);var bg=v>=0?'rgba(63,185,80,'+(0.15+v*.6)+')':'rgba(248,81,73,'+(0.15+Math.abs(v)*.6)+')';
+      h+='<div class="cc" style="background:'+bg+';color:'+(Math.abs(v)>.5?'#fff':'#8b949e')+'">'+v.toFixed(2)+'</div>'})});
+  h+='</div>';el.innerHTML=h;}
+
+function updateSig(){var el=document.getElementById('c-sig');if(!el)return;
+  var sigs=mkt==='crypto'?[
+    {t:'bull',ti:'Correlation',m:'BTC up — ETH follows +1.6% (r=0.87, lag=2h)',c:82},
+    {t:'bear',ti:'Divergence',m:'SOL diverging from BTC — r dropped to 0.52',c:71},
+    {t:'bull',ti:'RSI Signal',m:'ADA RSI at 28 — oversold, mean reversion expected',c:74},
+  ]:[
+    {t:'bull',ti:'Small Cap',m:'IWM above SMA-50 — risk-on for crypto',c:76},
+    {t:'bear',ti:'Divergence',m:'SPY up but IWM down — risk-off',c:72},
+  ];
+  el.innerHTML=sigs.map(function(s){return'<div class="sig '+s.t+'"><div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+s.ti+'</span></div><div class="text-t2 mb-1">'+s.m+'</div><div class="flex items-center gap-2"><span class="text-t2">Conf:</span><div class="flex-1 bg-s3 rounded-full h-1"><div class="h-1 rounded-full '+(s.c>70?'bg-grn':'bg-ylw')+'" style="width:'+s.c+'%"></div></div><span class="font-bold '+(s.c>70?'text-grn':'text-ylw')+'">'+s.c+'%</span></div></div>'}).join('');}
+
+function updateInd(){var el=document.getElementById('c-ind');if(!el)return;var a=findA(sel)||getAssets()[0];var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
+  if(!d||d.length<20){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Loading...</div>';return;}
+  var rsi=cRSI(d),s20=sma(d,20),s50=d.length>=50?sma(d,50):s20,pr=d[d.length-1].close;
+  var trend=pr>s20&&s20>s50?'Uptrend':pr<s20&&s20<s50?'Downtrend':'Sideways';
+  var tc=trend==='Uptrend'?'text-grn':trend==='Downtrend'?'text-red':'text-ylw';
+  var rs=rsi>70?'Overbought':rsi<30?'Oversold':'Neutral';var rc=rsi>70?'text-red':rsi<30?'text-grn':'text-t2';
+  el.innerHTML='<div class="space-y-1"><div class="text-t2 font-bold uppercase" style="font-size:9px">'+a.sym+' Indicators</div>'+
+    mr('RSI (14)',rsi.toFixed(1)+' <span class="'+rc+'">'+rs+'</span>')+mr('Trend','<span class="'+tc+'">'+trend+'</span>')+
+    mr('SMA 20','$'+fp(s20)+' <span class="'+(pr>s20?'text-grn':'text-red')+'">'+(pr>s20?'Above':'Below')+'</span>')+
+    mr('SMA 50','$'+fp(s50)+' <span class="'+(pr>s50?'text-grn':'text-red')+'">'+(pr>s50?'Above':'Below')+'</span>')+'</div>';}
+
+function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,tileAsset[k])});
+  var pv=portVal();setText('h-port','$'+fp(pv));setText('pf-val','$'+fp(pv));
+  var pnl=pv-account.start;var pe=document.getElementById('h-pnl');if(pe){pe.textContent=(pnl>=0?'+':'')+('$'+fp(Math.abs(pnl)));pe.className=(pnl>=0?'text-grn':'text-red')+' font-bold';}
+  var ppe=document.getElementById('pf-pnl');if(ppe){ppe.textContent=(pnl>=0?'+':'')+('$'+fp(Math.abs(pnl)));ppe.className=(pnl>=0?'text-grn':'text-red')+' font-bold text-lg';}
+  setText('h-pos',account.positions.length+'');setText('pf-fees','$'+fp(account.fees));
+  var m=RiskEngine.calcMetrics(account.trades,account.start);setText('pf-wr',m&&m.totalTrades>0?(m.winRate*100).toFixed(0)+'%':'--');}
+
+function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
+  if(!account.positions.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">No open positions</div>';return;}
+  el.innerHTML=account.positions.map(function(p){var pr=prOf(p.id),pnl=pr?(pr-p.avgPrice)*p.qty:0,pct=p.avgPrice?(pr-p.avgPrice)/p.avgPrice*100:0;
+    return'<div class="metric"><div><span class="font-bold text-t1">'+p.sym+'</span> <span class="text-t2">'+p.qty.toFixed(4)+'</span></div><div class="text-right"><span class="'+(pnl>=0?'text-grn':'text-red')+' font-bold">'+(pnl>=0?'+':'')+fp(Math.abs(pnl))+' ('+pct.toFixed(1)+'%)</span> <button class="text-red text-xs ml-1" onclick="sellA(\''+p.id+'\')">Sell</button></div></div>'}).join('');}
+
+function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)return;
+  if(!account.trades.length){el.innerHTML='<div class="text-t2 text-xs text-center py-2">No trades yet</div>';return;}
+  el.innerHTML=account.trades.slice(0,20).map(function(t){var c=t.type==='BUY'?'text-blu':t.pnl>=0?'text-grn':'text-red';
+    return'<div class="metric"><div><span class="font-bold '+c+'">'+t.type+'</span> '+t.sym+'</div><div class="text-right text-t2">$'+fp(t.price)+(t.pnl!==undefined?' P&L:'+(t.pnl>=0?'+':'')+fp(Math.abs(t.pnl)):'')+' <span class="text-ylw">fee:$'+fp(t.fees||0)+'</span></div></div>'}).join('');}
+
+function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)return;
+  var moves=analyzeMarket();
+  el.innerHTML=moves.map(function(m){return'<div class="sig '+(m.dir==='buy'?'bull':'bear')+'"><span class="font-bold text-t1">'+m.sym+'</span> — <span class="text-t2">'+m.reason+'</span> <span class="font-bold '+(m.dir==='buy'?'text-grn':'text-red')+'">'+m.dir.toUpperCase()+'</span> <span class="text-t2">(conf: '+m.conf+'%)</span></div>'}).join('');
+  if(!moves.length)el.innerHTML='<div class="text-t2 text-xs">No signals currently. Bot is monitoring...</div>';}
+
+// ===================== MARKET ANALYSIS =====================
+function analyzeMarket(){
+  var moves=[];var assets=getAssets();
+  assets.forEach(function(a){var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];if(!d||d.length<30)return;
+    var rsi=cRSI(d),s20=sma(d,20),s50=d.length>=50?sma(d,50):s20,pr=d[d.length-1].close,ch=chOf(a.id);
+    // RSI signal
+    if(rsi<30)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold',conf:75,strat:'meanrev'});
+    if(rsi>70&&account.positions.find(function(p){return p.id===a.id}))moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought',conf:72,strat:'meanrev'});
+    // Trend
+    if(pr>s20&&s20>s50&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Uptrend + SMA golden alignment',conf:68,strat:'momentum'});
+    if(pr<s20&&s20<s50&&account.positions.find(function(p){return p.id===a.id}))moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Downtrend + death cross',conf:70,strat:'momentum'});
+  });
+  return moves.sort(function(a,b){return b.conf-a.conf}).slice(0,5);
+}
+
+function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)return;
+  var moves=analyzeMarket();
+  var regime=mkt==='crypto'?(chOf('bitcoin')>0?'BULLISH':'BEARISH'):(chOf('spy')>0?'BULLISH':'BEARISH');
+  var regC=regime==='BULLISH'?'text-grn':'text-red';
+  var recStrat='hybrid';
+  if(moves.filter(function(m){return m.strat==='meanrev'}).length>2)recStrat='meanrev';
+  else if(moves.filter(function(m){return m.strat==='momentum'}).length>2)recStrat='momentum';
+
+  var html='<div class="grid grid-cols-3 gap-4 mb-4">'+
+    '<div class="bg-s2 rounded p-4 text-center"><div class="text-t2 text-xs mb-1">Market Regime</div><div class="font-bold text-xl '+regC+'">'+regime+'</div></div>'+
+    '<div class="bg-s2 rounded p-4 text-center"><div class="text-t2 text-xs mb-1">Recommended Strategy</div><div class="font-bold text-xl text-blu">'+(STRATS[recStrat]||{name:recStrat}).name+'</div></div>'+
+    '<div class="bg-s2 rounded p-4 text-center"><div class="text-t2 text-xs mb-1">Active Signals</div><div class="font-bold text-xl text-ylw">'+moves.length+'</div></div></div>';
+
+  if(moves.length){
+    html+='<div class="text-t2 text-xs font-bold uppercase mb-2">Signal Details</div>';
+    moves.forEach(function(m){
+      html+='<div class="sig '+(m.dir==='buy'?'bull':'bear')+' mb-2"><div class="flex justify-between"><span class="font-bold text-t1">'+m.sym+' — '+m.dir.toUpperCase()+'</span><span class="font-bold '+(m.conf>70?'text-grn':'text-ylw')+'">'+m.conf+'%</span></div><div class="text-t2">'+m.reason+' <span class="text-pur">('+m.strat+')</span></div></div>';
+    });
+  } else {html+='<div class="text-t2 text-center py-4">No strong signals detected. Market is consolidating.</div>';}
+
+  html+='<div class="mt-3 p-3 bg-s2 rounded"><div class="text-t2 text-xs font-bold mb-1">Strategy Recommendation</div><p class="text-t2 text-xs">Based on current conditions, <span class="text-blu font-bold">'+STRATS[recStrat].name+'</span> is recommended. '+STRATS[recStrat].desc+'</p>';
+  if(recStrat!=='hybrid')html+='<button class="btn btn-b mt-2" onclick="document.getElementById(\'strat-sel\').value=\''+recStrat+'\';showPage(\'bot\',document.querySelectorAll(\'.nav-tab\')[1])">Apply & Go to Bot</button>';
+  html+='</div>';
+  el.innerHTML=html;
+
+  // Metrics
+  var mel=document.getElementById('c-metrics');if(!mel)return;
+  var mt=RiskEngine.calcMetrics(account.trades,account.start);
+  if(!mt||mt.totalTrades===0){mel.innerHTML='<div class="text-t2 text-xs text-center py-4">Start trading to see metrics</div>';return;}
+  var rc=mt.totalReturn>=0?'text-grn':'text-red';
+  mel.innerHTML='<div class="space-y-1">'+
+    mr('Net P&L','<span class="'+rc+'">'+(mt.netProfit>=0?'+':'')+fp(Math.abs(mt.netProfit))+'</span>')+
+    mr('Return','<span class="'+rc+'">'+mt.totalReturn.toFixed(2)+'%</span>')+
+    mr('Trades',mt.totalTrades+' ('+mt.wins+'W/'+mt.losses+'L)')+
+    mr('Win Rate',(mt.winRate*100).toFixed(1)+'%')+
+    mr('Sharpe',mt.sharpe.toFixed(2))+mr('Sortino',mt.sortino.toFixed(2))+
+    mr('Max DD','<span class="text-red">'+mt.maxDrawdown.toFixed(1)+'%</span>')+
+    mr('Profit Factor',mt.profitFactor===Infinity?'∞':mt.profitFactor.toFixed(2))+
+    mr('Fees','<span class="text-ylw">$'+fp(account.fees)+'</span>')+'</div>';
+}
+
+// ===================== TRADING ENGINE =====================
+function buyA(id,amt){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
+  var cost=calculateTradeCost(amt,gv('fee-sel')||'coinbase_adv','buy',.03);var eff=amt-cost.total;if(eff<=0)return null;
+  var qty=eff/pr;account.cash-=amt;account.fees+=cost.total;
+  var ex=account.positions.find(function(p){return p.id===id});
+  if(ex){var tq=ex.qty+qty;ex.avgPrice=(ex.avgPrice*ex.qty+pr*qty)/tq;ex.qty=tq;}
+  else account.positions.push({id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,avgPrice:pr});
+  var t={type:'BUY',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:amt,fees:cost.total,time:new Date().toLocaleTimeString()};
+  account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
+
+window.sellA=function(id,qty){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
+  var pr=prOf(id);if(!pr)return null;if(!qty||qty>=pos.qty)qty=pos.qty;
+  var gross=qty*pr;var cost=calculateTradeCost(gross,gv('fee-sel')||'coinbase_adv','sell',.03);var net=gross-cost.total;
+  var pnl=net-(qty*pos.avgPrice);account.cash+=net;account.dayPnL+=pnl;bot.pnl+=pnl;account.fees+=cost.total;
+  pos.qty-=qty;if(pos.qty<.00001)account.positions=account.positions.filter(function(p){return p.id!==id});
+  var t={type:'SELL',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:net,pnl:pnl,fees:cost.total,time:new Date().toLocaleTimeString()};
+  account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;};
+
+function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p.qty*prOf(p.id)});return v;}
+
+// ===================== BOT ENGINE =====================
+window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';
+  document.getElementById('btn-start').style.display='none';document.getElementById('btn-stop').style.display='';
+  setText('bot-status','RUNNING');document.getElementById('bot-status').className='font-bold text-xs text-grn';
+  setText('h-bot','ON');document.getElementById('h-bot').className='text-grn font-bold';
+  document.getElementById('mode-badge').textContent='BOT ON';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-grn border-grn pulse';
+  blog('Bot started — strategy: '+(STRATS[bot.strat]||{name:bot.strat}).name);
+  runBot();bot.iv=setInterval(runBot,15000);};
+
+window.stopBot=function(){bot.on=false;clearInterval(bot.iv);
+  document.getElementById('btn-start').style.display='';document.getElementById('btn-stop').style.display='none';
+  setText('bot-status','STOPPED');document.getElementById('bot-status').className='font-bold text-xs text-red';
+  setText('h-bot','OFF');document.getElementById('h-bot').className='text-red font-bold';
+  document.getElementById('mode-badge').textContent='PAPER';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-ylw border-ylw';
+  blog('Bot stopped');};
+
+window.killAll=function(){stopBot();var s=[];account.positions.slice().forEach(function(p){sellA(p.id);s.push(p.sym)});
+  blog('KILL — closed: '+s.join(', '));if(s.length)alert('Closed '+s.length+' positions')};
+
+function runBot(){if(!bot.on)return;
+  var cs=ConnGuard.canTradeSafely();if(!cs.safe){blog('PAUSED: '+cs.reason);return;}
+  if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
+
+  // Stop/trail check
+  var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
+  account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
+    if(pct<=-sl){blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id);}
+    else if(pct>=tp){blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id);}});
+
+  var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
+  var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
+
+  var moves=analyzeMarket();
+  if(bot.strat==='hybrid'){
+    // Smart hybrid: only act on signals with conf > 70 and that at least 2 strategies agree on
+    var buys={};moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;}});
+    for(var id in buys){if(buys[id]>=1&&!account.positions.find(function(p){return p.id===id})){
+      var m=moves.find(function(x){return x.id===id&&x.dir==='buy'});
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt);return;}}
+  } else {
+    var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})});
+    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt);}
+  }
+  updateNextMoves();
+}
+
+function blog(msg){bot.logs.unshift({t:new Date().toLocaleTimeString(),m:msg});if(bot.logs.length>50)bot.logs.length=50;
+  var el=document.getElementById('bot-log');if(!el)return;
+  el.innerHTML=bot.logs.map(function(l){return'<div class="text-xs mb-1"><span class="text-t2">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>'}).join('');}
+
+window.onStratChange=function(){var s=gv('strat-sel');var el=document.getElementById('strat-info');if(el&&STRATS[s])el.textContent=STRATS[s].desc;};
+
+// ===================== SIMULATOR =====================
+window.runSim=function(){var el=document.getElementById('sim-out');if(!el)return;
+  el.innerHTML='<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-bd border-t-blu rounded-full spin"></div><span class="text-t2 text-xs">Running...</span></div>';
+  var stKey=gv('sim-strat')||'meanrev';var days=parseInt(gv('sim-days'))||90;var strat=Strategies[stKey];
+  if(!strat){el.innerHTML='<div class="text-red text-xs">Unknown strategy</div>';return;}
+  var aid=sel;var getData=mkt==='crypto'?cgOHLC(aid,days):Promise.resolve(findA(aid)&&findA(aid).base?genStk(findA(aid),dToB(days)):[]);
+  getData.then(function(data){if(!data||data.length<60){el.innerHTML='<div class="text-ylw text-xs">Not enough data (need 60+ bars)</div>';return;}
+    var res=Simulator.backtest(strat,data,gv('fee-sel')||'coinbase_adv',{maxPositionPct:10,stopLossPct:5,takeProfitPct:10,maxConcurrentPos:5},100000);
+    var m=res.metrics;if(!m){el.innerHTML='<div class="text-t2 text-xs">No trades generated</div>';return;}
+    var rc=m.totalReturn>=0?'text-grn':'text-red';
+    el.innerHTML='<div class="space-y-1">'+mr('Net P&L','<span class="'+rc+'">'+(m.netProfit>=0?'+':'')+fp(Math.abs(m.netProfit))+'</span>')+mr('Return','<span class="'+rc+'">'+m.totalReturn.toFixed(2)+'%</span>')+mr('Trades',m.totalTrades)+mr('Win Rate',(m.winRate*100).toFixed(0)+'%')+mr('Sharpe',m.sharpe.toFixed(2))+mr('Max DD',m.maxDrawdown.toFixed(1)+'%')+mr('Fees','$'+fp(res.totalFees))+'</div>';
+  }).catch(function(e){el.innerHTML='<div class="text-red text-xs">Error: '+e.message+'</div>'});};
+
+// ===================== SEARCH =====================
+window.doSearch=function(q){clearTimeout(searchTO);var el=document.getElementById('search-drop');if(!q){el.classList.remove('open');return;}
+  searchTO=setTimeout(function(){
+    if(mkt==='crypto'){qApi('https://api.coingecko.com/api/v3/search?query='+encodeURIComponent(q)).then(function(d){
+      if(!d.coins)return;showSR(d.coins.slice(0,10).map(function(c){return{id:c.id,sym:c.symbol.toUpperCase(),name:c.name,rank:c.market_cap_rank}}))}).catch(function(){});}
+    else{var qu=q.toUpperCase();var r=STOCKS.filter(function(s){return s.sym.indexOf(qu)>-1||s.name.toUpperCase().indexOf(qu)>-1}).slice(0,10);showSR(r);}
+  },350);};
+
+function showSR(res){var el=document.getElementById('search-drop');if(!res.length){el.classList.remove('open');return;}
+  el.innerHTML=res.map(function(r){var inW=wl.some(function(w){return w.id===r.id})||getAssets().some(function(a){return a.id===r.id});
+    return'<div class="search-item" onclick="addWL(\''+r.id+'\',\''+r.sym+'\',\''+r.name.replace(/'/g,"\\'")+'\')"><div><span class="font-bold text-t1">'+r.sym+'</span> <span class="text-t2" style="font-size:10px">'+r.name+'</span></div>'+(inW?'<span class="text-grn" style="font-size:9px">✓</span>':'<span class="text-blu" style="font-size:9px">+ Add</span>')+'</div>'}).join('');
+  el.classList.add('open');}
+
+window.addWL=function(id,sym,name){if(wl.some(function(w){return w.id===id})||getAssets().some(function(a){return a.id===id}))return;
+  wl.push({id:id,sym:sym,name:name,mkt:mkt});try{localStorage.setItem('tb_wl',JSON.stringify(wl))}catch(e){}
+  if(mkt==='crypto'){qApi('https://api.coingecko.com/api/v3/simple/price?ids='+id+'&vs_currencies=usd&include_24hr_change=true').then(function(d){if(d[id])prices[id]=d[id];updateWL()}).catch(function(){updateWL()});}
+  else{var a=findA(id);if(a&&a.base&&!stkData[id]){stkData[id]=genStk(a,168);var dd=stkData[id];prices[id]={usd:dd[dd.length-1].close,usd_24h_change:((dd[dd.length-1].close-dd[0].open)/dd[0].open)*100}}updateWL();}
+  document.getElementById('search-drop').classList.remove('open');document.getElementById('search').value='';};
+
+window.rmWL=function(id){wl=wl.filter(function(w){return w.id!==id});try{localStorage.setItem('tb_wl',JSON.stringify(wl))}catch(e){}updateWL();};
+
+function getWL(){var base=getAssets().slice(0,4);var custom=wl.filter(function(w){return w.mkt===mkt});var seen={},r=[];
+  base.concat(custom).forEach(function(a){if(!seen[a.id]){seen[a.id]=true;r.push(a)}});return r;}
+
+document.addEventListener('click',function(e){if(!e.target.closest('.search-box')){var d=document.getElementById('search-drop');if(d)d.classList.remove('open')}});
+
+// ===================== HELPERS =====================
+function getAssets(){return mkt==='crypto'?CRYPTO:STOCKS}
+function findA(id){return CRYPTO.find(function(c){return c.id===id})||STOCKS.find(function(s){return s.id===id})||wl.find(function(w){return w.id===id})||null}
+function prOf(id){var p=prices[id];return p?p.usd:0}
+function chOf(id){var p=prices[id];return p?(p.usd_24h_change||0):0}
+function fp(p){if(!p)return'0.00';if(p>=1000)return p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return p.toFixed(2);return p.toFixed(4)}
+function setText(id,t){var el=document.getElementById(id);if(el)el.textContent=t}
+function setPr(eid,aid){var el=document.getElementById(eid);if(!el)return;var p=prOf(aid),c=chOf(aid);el.textContent='$'+fp(p);el.className=(c>=0?'text-grn':'text-red')+' font-bold text-xs'}
+function gv(id){var el=document.getElementById(id);return el?el.value:''}
+function mr(l,v){return'<div class="metric"><span class="text-t2">'+l+'</span><span class="font-bold">'+v+'</span></div>'}
+function cRSI(d){var p=14,g=[],lo=[];for(var i=1;i<d.length;i++){var c=d[i].close-d[i-1].close;g.push(c>0?c:0);lo.push(c<0?-c:0)}if(g.length<p)return 50;var ag=0,al=0;for(var i=g.length-p;i<g.length;i++){ag+=g[i];al+=lo[i]}ag/=p;al/=p;return 100-100/(1+(al===0?100:ag/al))}
+function sma(d,p){var s=0;for(var i=d.length-p;i<d.length;i++)s+=d[i].close;return s/p}
+function setStatus(s,t){var d=document.getElementById('st-dot'),x=document.getElementById('st-txt');if(d)d.className='w-2 h-2 rounded-full '+(s==='ok'?'bg-grn':s==='err'?'bg-red':'bg-ylw pulse');if(x)x.textContent=t}
+
+window.showPage=function(p,btn){
+  ['dashboard','bot','analysis'].forEach(function(id){document.getElementById('page-'+id).style.display=id===p?'':'none'});
+  document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
+  if(p==='dashboard')setTimeout(resizeCharts,200);
+  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();}
+  if(p==='analysis')updateAnalysis();};
+
+window.switchMkt=function(m,btn){mkt=m;sel=getAssets()[0].id;tileDays={main:7,c2:7,c3:7};
+  btn.parentElement.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});btn.classList.add('on');
+  loadAll();};
+
+window._sel=function(id){sel=id;tileAsset.main=id;loadTile('main',id,tileDays.main);updateInd();updateWL();};
+
+// ===================== INIT =====================
+// ===================== AUTH =====================
+window.doSignIn=async function(){
+  var email=gv('auth-email'),pass=gv('auth-pass');
+  if(!email||!pass){showAuthErr('Enter email and password');return;}
+  var r=await SB.signIn(email,pass);
+  if(r.error)showAuthErr(r.error);else document.getElementById('auth-overlay').style.display='none';
+};
+window.doSignUp=async function(){
+  var email=gv('auth-email'),pass=gv('auth-pass');
+  if(!email||!pass){showAuthErr('Enter email and password');return;}
+  if(pass.length<6){showAuthErr('Password must be at least 6 characters');return;}
+  var r=await SB.signUp(email,pass);
+  if(r.error)showAuthErr(r.error);else{showAuthErr('');document.getElementById('auth-overlay').style.display='none';alert('Account created! Check your email to verify.');}
+};
+function showAuthErr(msg){var el=document.getElementById('auth-error');if(el){el.textContent=msg;el.classList.toggle('hidden',!msg)}}
+window.updateAuthUI=function(loggedIn){
+  var btn=document.getElementById('auth-btn');
+  if(btn){
+    if(loggedIn){btn.textContent=SB.user.email.split('@')[0];btn.onclick=function(){if(confirm('Sign out?'))SB.signOut()};}
+    else{btn.textContent='Sign In';btn.onclick=function(){document.getElementById('auth-overlay').style.display='flex'};}
+  }
+};
+
+// Override trade functions to sync with Supabase
+var _origBuyA=buyA;
+buyA=function(id,amt){var t=_origBuyA(id,amt);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+var _origSellA=window.sellA;
+window.sellA=function(id,qty){var t=_origSellA(id,qty);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+
+// Override watchlist save
+var _origAddWL=window.addWL;
+window.addWL=function(id,sym,name){_origAddWL(id,sym,name);if(SB.user)SB.saveWatchlist(wl);};
+var _origRmWL=window.rmWL;
+window.rmWL=function(id){_origRmWL(id);if(SB.user)SB.saveWatchlist(wl);};
+
+// Override blog to save to Supabase
+var _origBlog=blog;
+blog=function(msg){_origBlog(msg);if(SB.user)SB.saveLog(msg,'info');};
+
+// ===================== INIT =====================
+ConnGuard.init();
+try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
+setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);
+onStratChange();
+loadAll();
+window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
+setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
+
+// Init Supabase — REPLACE THESE WITH YOUR PROJECT CREDENTIALS
+// After creating your Supabase project, update these values:
+var SUPABASE_URL = '';  // e.g., 'https://xxxx.supabase.co'
+var SUPABASE_ANON = ''; // e.g., 'eyJhbGci...'
+if(SUPABASE_URL && SUPABASE_ANON) {
+  SB.init(SUPABASE_URL, SUPABASE_ANON);
+} else {
+  console.log('Supabase not configured — running in local-only mode. Set SUPABASE_URL and SUPABASE_ANON in index.html to enable cloud sync.');
+}
+
+})();
+</script>
+</body>
+</html>
