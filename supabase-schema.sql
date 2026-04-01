@@ -1,4 +1,4 @@
--- ===== TradingBOT Supabase Schema =====
+-- ===== CulexTrade Supabase Schema =====
 -- Run this in the Supabase SQL Editor after creating your project
 
 -- Enable Row Level Security on all tables

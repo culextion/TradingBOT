@@ -1,4 +1,4 @@
-// ===== TradingBOT Main Application =====
+// ===== CulexTrade Main Application =====
 
 import {
   CRYPTO_ASSETS, STOCK_ASSETS, ALL_ASSETS,

@@ -1,4 +1,4 @@
-// ===== TradingBOT Configuration =====
+// ===== CulexTrade Configuration =====
 
 export const COLORS = {
   bull: '#3fb950',
@@ -60,9 +60,9 @@ export const MOCK_CORRELATIONS = {
 };
 
 export const STORAGE_KEYS = {
-  layout: 'tradingbot_layout',
-  theme: 'tradingbot_theme',
-  watchlist: 'tradingbot_watchlist',
-  activeMarket: 'tradingbot_active_market',
-  chartStyle: 'tradingbot_chart_style',
+  layout: 'culextrade_layout',
+  theme: 'culextrade_theme',
+  watchlist: 'culextrade_watchlist',
+  activeMarket: 'culextrade_active_market',
+  chartStyle: 'culextrade_chart_style',
 };
