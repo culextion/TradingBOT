@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>CulexTrade</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{'s0':'var(--s0)','s1':'var(--s1)','s2':'var(--s2)','s3':'var(--s3)','bd':'var(--bd)','t1':'var(--t1)','t2':'var(--t2)','blu':'var(--blu)','grn':'var(--grn)','red':'var(--red)','ylw':'var(--ylw)','pur':'var(--pur)'}}}}</script>
@@ -57,12 +59,14 @@ select.inp{appearance:auto}
 <!-- HEADER -->
 <header class="bg-s1 border-b border-bd px-4 py-1 flex items-center justify-between flex-shrink-0 z-50">
 <div class="flex items-center gap-3">
-  <svg width="26" height="26" viewBox="0 0 180 180" style="display:block;flex-shrink:0">
-    <path fill="var(--t1)" d="M82.84,157.91c31.25,7.27,36.75-17.71,48.1-6.77,3.01,2.9,4.36,9.01.24,12.63-12.81,11.31-29.78,15.46-47.08,13.33-23.85-2.93-43.9-20.01-52.33-40.04-10.3-24.51-5.76-51.21,10.48-69.96,27.87-32.18,76.29-30.98,99.69-.53,3.63,4.72,3.35,10.63-1.12,14.1-4.73,3.67-10.45,1.89-14.18-3.14-8.68-11.68-23.46-16.87-38.17-15.4-23.75,2.36-41.78,22.08-43.37,44.85-1.65,23.65,13.8,45.36,37.74,50.93h0Z"/>
-    <polyline fill="none" stroke="var(--grn)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" points="55,130 75,115 90,125 110,85 125,95 145,55"/>
-    <circle cx="145" cy="55" r="5" fill="var(--grn)"/>
+  <svg width="28" height="28" viewBox="0 0 100 100" style="display:block;flex-shrink:0;vertical-align:middle">
+    <!-- C shape - thick rounded -->
+    <path d="M50,10 A40,40 0 1,0 75,78" fill="none" stroke="var(--t1)" stroke-width="14" stroke-linecap="round"/>
+    <!-- Green upward checkmark/arrow emerging from inside the C -->
+    <path d="M38,62 L52,52 L72,22" fill="none" stroke="var(--grn)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="72" cy="22" r="6" fill="var(--grn)"/>
   </svg>
-  <span style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;font-weight:700;letter-spacing:.3px;line-height:1"><span class="text-blu">Culex</span><span class="text-t2">Trade</span></span>
+  <span style="font-family:'Inter','Helvetica Neue',system-ui,-apple-system,sans-serif;font-size:16px;font-weight:600;letter-spacing:-.2px;line-height:28px;vertical-align:middle"><span class="text-t1" style="font-weight:700">culex</span><span class="text-t2" style="font-weight:400">trade</span></span>
   <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw">PAPER</span>
   <button id="auth-btn" class="text-xs border border-bd rounded px-2 py-0.5 text-t2 hover:text-blu hover:border-blu" onclick="document.getElementById('auth-overlay').style.display='flex'">Sign In</button>
 </div>
@@ -228,7 +232,7 @@ select.inp{appearance:auto}
 <!-- AUTH MODAL -->
 <div id="auth-overlay" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center" style="display:none">
 <div class="bg-s1 border border-bd rounded-lg p-6 w-80">
-  <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">Sign In to CulexTrade</span><button onclick="document.getElementById('auth-overlay').style.display='none'" class="text-t2 hover:text-t1 text-lg">&times;</button></div>
+  <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">Sign In to culextrade</span><button onclick="document.getElementById('auth-overlay').style.display='none'" class="text-t2 hover:text-t1 text-lg">&times;</button></div>
   <div id="auth-error" class="text-red text-xs mb-2 hidden"></div>
   <input id="auth-email" class="inp mb-2" placeholder="Email" type="email"/>
   <input id="auth-pass" class="inp mb-3" placeholder="Password" type="password"/>
