@@ -1,21 +1,21 @@
-/* ===== CulexTrade Dark Theme ===== */
+/* ===== CulexTrade Theme ===== */
 
 :root {
-  --surface-0: #0d1117;
-  --surface-1: #161b22;
-  --surface-2: #1c2333;
-  --surface-3: #242d3d;
-  --border-dim: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent-blue: #58a6ff;
-  --accent-green: #3fb950;
-  --accent-red: #f85149;
-  --accent-yellow: #d29922;
-  --accent-purple: #bc8cff;
+  --surface-0: var(--s0, #0d1117);
+  --surface-1: var(--s1, #161b22);
+  --surface-2: var(--s2, #1c2333);
+  --surface-3: var(--s3, #242d3d);
+  --border-dim: var(--bd, #30363d);
+  --text-primary: var(--t1, #e6edf3);
+  --text-secondary: var(--t2, #8b949e);
+  --accent-blue: var(--blu, #58a6ff);
+  --accent-green: var(--grn, #3fb950);
+  --accent-red: var(--red, #f85149);
+  --accent-yellow: var(--ylw, #d29922);
+  --accent-purple: var(--pur, #bc8cff);
   --panel-opacity: 1;
-  --chart-bull: #3fb950;
-  --chart-bear: #f85149;
+  --chart-bull: var(--grn, #3fb950);
+  --chart-bear: var(--red, #f85149);
   --glow-strength: 0 0 12px;
 }
 

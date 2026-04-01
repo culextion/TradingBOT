@@ -1,27 +1,31 @@
 // ===== CulexTrade Configuration =====
 
+function _cv(v, fb) {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fb; } catch(e) { return fb; }
+}
+
 export const COLORS = {
-  bull: '#3fb950',
-  bear: '#f85149',
-  blue: '#58a6ff',
-  purple: '#bc8cff',
-  yellow: '#d29922',
-  surface0: '#0d1117',
-  surface1: '#161b22',
-  surface2: '#1c2333',
-  surface3: '#242d3d',
-  border: '#30363d',
-  textPrimary: '#e6edf3',
-  textSecondary: '#8b949e',
+  get bull() { return _cv('--grn', '#3fb950'); },
+  get bear() { return _cv('--red', '#f85149'); },
+  get blue() { return _cv('--blu', '#58a6ff'); },
+  get purple() { return _cv('--pur', '#bc8cff'); },
+  get yellow() { return _cv('--ylw', '#d29922'); },
+  get surface0() { return _cv('--s0', '#0d1117'); },
+  get surface1() { return _cv('--s1', '#161b22'); },
+  get surface2() { return _cv('--s2', '#1c2333'); },
+  get surface3() { return _cv('--s3', '#242d3d'); },
+  get border() { return _cv('--bd', '#30363d'); },
+  get textPrimary() { return _cv('--t1', '#e6edf3'); },
+  get textSecondary() { return _cv('--t2', '#8b949e'); },
 };
 
 export const CHART_COLORS = {
-  upColor: COLORS.bull,
-  downColor: COLORS.bear,
-  wickUpColor: COLORS.bull,
-  wickDownColor: COLORS.bear,
-  borderUpColor: COLORS.bull,
-  borderDownColor: COLORS.bear,
+  get upColor() { return COLORS.bull; },
+  get downColor() { return COLORS.bear; },
+  get wickUpColor() { return COLORS.bull; },
+  get wickDownColor() { return COLORS.bear; },
+  get borderUpColor() { return COLORS.bull; },
+  get borderDownColor() { return COLORS.bear; },
 };
 
 export const CRYPTO_ASSETS = [
