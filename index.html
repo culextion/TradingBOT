@@ -19,9 +19,8 @@ body{margin:0;background:var(--s0);color:var(--t1);font-family:'Courier New',mon
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
 @keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}.pulse{animation:pulse 2s infinite}
-@keyframes ticker-scroll{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-50%,0,0)}}
 .ticker-wrap{overflow:hidden;width:100%;height:100%;position:relative}
-.ticker-track{display:flex;align-items:center;white-space:nowrap;height:100%;width:max-content;will-change:transform;animation:ticker-scroll var(--ticker-speed,40s) linear infinite}.ticker-track:hover{animation-play-state:paused}
+.ticker-track{display:inline-flex;align-items:center;white-space:nowrap;height:100%;will-change:transform}
 .ticker-news{color:var(--ylw);font-weight:700;padding:0 12px;display:inline-flex;align-items:center;gap:4px}
 .panel{background:var(--s1);border:1px solid var(--bd);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .panel:hover{border-color:var(--hover-bd)}
@@ -124,7 +123,7 @@ select.inp{appearance:auto}
   <!-- Charts -->
   <div class="flex-1 p-2 grid gap-2 overflow-auto" style="grid-template-columns:2fr 1fr;grid-template-rows:2fr 1fr 1fr">
     <div class="panel row-span-2" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
-    <div class="panel" id="p-corr"><div class="ph"><span>Correlation Matrix</span></div><div class="pb p-2" id="c-corr"></div></div>
+    <div class="panel" id="p-corr"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
     <div class="panel" id="p-sig"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
     <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
     <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
@@ -366,10 +365,10 @@ function loadAll(){
   if(mkt==='crypto'){
     cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();
       loadTile('main',tileAsset.main,tileDays.main);
-      // stagger other tiles
       setTimeout(function(){loadTile('c2',tileAsset.c2,tileDays.c2)},2500);
       setTimeout(function(){loadTile('c3',tileAsset.c3,tileDays.c3)},5000);
-      setTimeout(function(){updateInd();setStatus('ok','CoinGecko — Live')},6000);
+      // Load OHLC for ALL watchlist items (for bot analysis + market insights)
+      loadAllOHLC(w,0);
     }).catch(function(e){console.error(e);setStatus('err','API error — retrying');setTimeout(loadAll,15000);});
   }else{
     w.forEach(function(a){var st=findA(a.id);if(st&&st.base&&!stkData[a.id]){stkData[a.id]=genStk(st,168);var d=stkData[a.id];prices[a.id]={usd:d[d.length-1].close,usd_24h_change:((d[d.length-1].close-d[0].open)/d[0].open)*100}}});
@@ -378,29 +377,51 @@ function loadAll(){
   }
 }
 
+// Load OHLC data for all watchlist items sequentially (for bot + analysis)
+function loadAllOHLC(assets,idx){
+  if(idx>=assets.length){updateInd();updateCorr();updateAnalysis();setStatus('ok','CoinGecko — Live (all data loaded)');return;}
+  var a=assets[idx];
+  if(ohlc[a.id]&&ohlc[a.id].length>10){loadAllOHLC(assets,idx+1);return;} // already loaded
+  cgOHLC(a.id,30).then(function(d){ohlc[a.id]=d;loadAllOHLC(assets,idx+1);}).catch(function(){loadAllOHLC(assets,idx+1);});
+}
+
 // ===================== UI UPDATES =====================
 function updateUI(){updateTicker();updateWL();updatePulse();updateCorr();updateSig();updateHdr();updatePos();updateAnalysis();}
 
-function updateTicker(){var el=document.getElementById('ticker');if(!el)return;
+// JS-driven ticker — no CSS animation, pure requestAnimationFrame for seamless scroll
+var tickerPos=0,tickerHalf=0,tickerPaused=false,tickerContent='';
+function initTicker(){
+  var el=document.getElementById('ticker');if(!el)return;
+  el.addEventListener('mouseenter',function(){tickerPaused=true});
+  el.addEventListener('mouseleave',function(){tickerPaused=false});
+  requestAnimationFrame(tickerLoop);
+}
+function tickerLoop(ts){
+  var el=document.getElementById('ticker');
+  if(el&&!tickerPaused){
+    tickerPos-=0.8; // pixels per frame (~48px/sec at 60fps)
+    if(tickerHalf>0&&tickerPos<=-tickerHalf)tickerPos+=tickerHalf;
+    el.style.transform='translate3d('+tickerPos+'px,0,0)';
+  }
+  requestAnimationFrame(tickerLoop);
+}
+function updateTicker(){
+  var el=document.getElementById('ticker');if(!el)return;
   var sep='<span style="color:var(--bd);padding:0 14px">│</span>';
-  var items=getWL().map(function(a){var p=prOf(a.id),ch=chOf(a.id);if(!p)return'';var u=ch>=0;
-    return'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 16px"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean);
+  var allAssets=getWL();
+  var items=allAssets.map(function(a){var p=prOf(a.id),ch=chOf(a.id);if(!p)return'';var u=ch>=0;
+    return'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 16px;flex-shrink:0"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean);
   if(window._tickerNews&&_tickerNews.length){_tickerNews.forEach(function(n){items.push('<span class="ticker-news">\u26A1 '+n+'</span>')});}
   var content=items.join(sep);
-  // Build two identical halves — animation shifts left by exactly half, creating seamless loop
-  var half='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:40px">'+content+'</span>';
+  var newContent=content;
+  if(newContent===tickerContent)return; // no change, don't rebuild
+  tickerContent=newContent;
+  // Two copies for seamless loop
+  var half='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:60px">'+content+'</span>';
   el.innerHTML=half+half;
-  // Wait for layout, then set speed proportional to content width
-  requestAnimationFrame(function(){
-    var halfWidth=el.scrollWidth/2;
-    var pxPerSec=60; // pixels per second scroll speed
-    var duration=Math.max(10,halfWidth/pxPerSec);
-    el.style.setProperty('--ticker-speed',duration+'s');
-    // Force restart animation cleanly
-    el.style.animation='none';
-    void el.offsetHeight; // trigger reflow
-    el.style.animation='';
-  });}
+  // Measure half width after render
+  requestAnimationFrame(function(){tickerHalf=el.scrollWidth/2;if(tickerPos<-tickerHalf)tickerPos=0;});
+}
 
 function updateWL(){var el=document.getElementById('watchlist');if(!el)return;
   el.innerHTML=getWL().map(function(a){var p=prOf(a.id),ch=chOf(a.id),u=ch>=0,on=a.id===sel;
@@ -418,24 +439,33 @@ function updatePulse(){var el=document.getElementById('pulse');if(!el)return;var
   }else{var sc=chOf('spy'),ic=chOf('iwm');items=[{l:'SPY',v:sc?(sc>=0?'+':'')+sc.toFixed(2)+'%':'--',c:sc>=0?'text-grn':'text-red'},{l:'IWM',v:ic?(ic>=0?'+':'')+ic.toFixed(2)+'%':'--',c:ic>=0?'text-grn':'text-red'},{l:'Regime',v:ic>sc?'Risk-On':'Risk-Off',c:ic>sc?'text-grn':'text-ylw'}];}
   el.innerHTML=items.map(function(i){return'<div class="flex justify-between"><span class="text-t2">'+i.l+'</span><span class="font-bold '+i.c+'">'+i.v+'</span></div>'}).join('');}
 
-function updateCorr(){var el=document.getElementById('c-corr');if(!el)return;var a=getAssets().slice(0,5),co=mkt==='crypto'?CORR_C:CORR_S,sy=a.map(function(x){return x.sym}),n=sy.length;
-  var h='<div style="display:grid;grid-template-columns:30px repeat('+n+',1fr);grid-template-rows:18px repeat('+n+',1fr);gap:2px;height:100%"><div></div>';
-  sy.forEach(function(s){h+='<div style="font-size:9px;font-weight:700;color:var(--t2);display:flex;align-items:center;justify-content:center">'+s+'</div>'});
-  sy.forEach(function(r,ri){h+='<div style="font-size:9px;font-weight:700;color:var(--t2);display:flex;align-items:center;justify-content:flex-end;padding-right:3px">'+r+'</div>';
-    sy.forEach(function(c,ci){var v=ri===ci?1:(co[r+'-'+c]||co[c+'-'+r]||0);var bg=v>=0?'rgba(63,185,80,'+(0.15+v*.6)+')':'rgba(248,81,73,'+(0.15+Math.abs(v)*.6)+')';
-      h+='<div class="cc" style="background:'+bg+';color:'+(Math.abs(v)>.5?'#fff':'var(--t2)')+'">'+v.toFixed(2)+'</div>'})});
-  h+='</div>';el.innerHTML=h;}
+function updateCorr(){var el=document.getElementById('c-corr');if(!el)return;
+  // Market insights: show each watchlist asset with key metrics
+  var wla=getWL();var html='';
+  wla.forEach(function(a){
+    var p=prOf(a.id),ch=chOf(a.id),d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
+    if(!p)return;
+    var u=ch>=0;
+    var rsi=d&&d.length>20?cRSI(d):50;
+    var rsiLabel=rsi>70?'Overbought':rsi<30?'Oversold':'Neutral';
+    var rsiC=rsi>70?'text-red':rsi<30?'text-grn':'text-t2';
+    var s20=d&&d.length>=20?sma(d,20):p;
+    var trend=p>s20?'▲ Bullish':'▼ Bearish';
+    var trendC=p>s20?'text-grn':'text-red';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--s2);border-radius:4px;margin-bottom:3px;font-size:10px">'+
+      '<div><span class="font-bold text-t1">'+a.sym+'</span> <span class="'+(u?'text-grn':'text-red')+'">'+(u?'+':'')+ch.toFixed(2)+'%</span></div>'+
+      '<div class="text-right"><span class="'+rsiC+'">RSI '+rsi.toFixed(0)+'</span> <span class="'+trendC+'">'+trend+'</span></div></div>';
+  });
+  if(!html)html='<div class="text-t2 text-xs text-center py-4">Loading market data...</div>';
+  el.innerHTML=html;}
 
 function updateSig(){var el=document.getElementById('c-sig');if(!el)return;
-  var sigs=mkt==='crypto'?[
-    {t:'bull',ti:'Correlation',m:'BTC up — ETH follows +1.6% (r=0.87, lag=2h)',c:82},
-    {t:'bear',ti:'Divergence',m:'SOL diverging from BTC — r dropped to 0.52',c:71},
-    {t:'bull',ti:'RSI Signal',m:'ADA RSI at 28 — oversold, mean reversion expected',c:74},
-  ]:[
-    {t:'bull',ti:'Small Cap',m:'IWM above SMA-50 — risk-on for crypto',c:76},
-    {t:'bear',ti:'Divergence',m:'SPY up but IWM down — risk-off',c:72},
-  ];
-  el.innerHTML=sigs.map(function(s){return'<div class="sig '+s.t+'"><div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+s.ti+'</span></div><div class="text-t2 mb-1">'+s.m+'</div><div class="flex items-center gap-2"><span class="text-t2">Conf:</span><div class="flex-1 bg-s3 rounded-full h-1"><div class="h-1 rounded-full '+(s.c>70?'bg-grn':'bg-ylw')+'" style="width:'+s.c+'%"></div></div><span class="font-bold '+(s.c>70?'text-grn':'text-ylw')+'">'+s.c+'%</span></div></div>'}).join('');}
+  // Generate REAL signals from market data
+  var moves=analyzeMarket();
+  if(!moves.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Analyzing markets... signals will appear as data loads.</div>';return;}
+  el.innerHTML=moves.map(function(s){
+    var t=s.dir==='buy'?'bull':'bear';
+    return'<div class="sig '+t+'"><div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+s.sym+' — '+s.dir.toUpperCase()+'</span><span class="text-t2" style="font-size:9px">'+s.strat+'</span></div><div class="text-t2 mb-1">'+s.reason+'</div><div class="flex items-center gap-2"><span class="text-t2">Conf:</span><div class="flex-1 bg-s3 rounded-full h-1"><div class="h-1 rounded-full '+(s.conf>70?'bg-grn':'bg-ylw')+'" style="width:'+s.conf+'%"></div></div><span class="font-bold '+(s.conf>70?'text-grn':'text-ylw')+'">'+s.conf+'%</span></div></div>';}).join('');}
 
 function updateInd(){var el=document.getElementById('c-ind');if(!el)return;var a=findA(sel)||getAssets()[0];var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
   if(!d||d.length<20){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Loading...</div>';return;}
@@ -472,17 +502,41 @@ function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)r
 
 // ===================== MARKET ANALYSIS =====================
 function analyzeMarket(){
-  var moves=[];var assets=getAssets();
-  assets.forEach(function(a){var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];if(!d||d.length<30)return;
-    var rsi=cRSI(d),s20=sma(d,20),s50=d.length>=50?sma(d,50):s20,pr=d[d.length-1].close,ch=chOf(a.id);
-    // RSI signal
-    if(rsi<30)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold',conf:75,strat:'meanrev'});
-    if(rsi>70&&account.positions.find(function(p){return p.id===a.id}))moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought',conf:72,strat:'meanrev'});
-    // Trend
-    if(pr>s20&&s20>s50&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Uptrend + SMA golden alignment',conf:68,strat:'momentum'});
-    if(pr<s20&&s20<s50&&account.positions.find(function(p){return p.id===a.id}))moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Downtrend + death cross',conf:70,strat:'momentum'});
+  var moves=[];var wla=getWL();
+  wla.forEach(function(a){
+    var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
+    if(!d||d.length<20)return;
+    var rsi=cRSI(d),pr=d[d.length-1].close,ch=chOf(a.id);
+    var s20=sma(d,20);
+    var s50=d.length>=50?sma(d,50):s20;
+    var hasPos=account.positions.find(function(p){return p.id===a.id});
+
+    // RSI signals
+    if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — strong bounce expected',conf:80,strat:'meanrev'});
+    else if(rsi<35)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold — mean reversion likely',conf:70,strat:'meanrev'});
+    if(rsi>75&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought — take profit',conf:78,strat:'meanrev'});
+
+    // SMA trend signals
+    if(pr>s20&&s20>s50&&ch>0.5)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Strong uptrend — price > SMA20 > SMA50, momentum +'+ch.toFixed(1)+'%',conf:72,strat:'momentum'});
+    if(pr<s20&&s20<s50&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Downtrend — price below both SMAs',conf:74,strat:'momentum'});
+
+    // Bollinger bounce
+    if(d.length>=20){
+      var closes=d.slice(-20).map(function(x){return x.close});
+      var mean=closes.reduce(function(a,b){return a+b},0)/20;
+      var std=Math.sqrt(closes.reduce(function(a,b){return a+Math.pow(b-mean,2)},0)/20);
+      if(pr<mean-1.8*std)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Price below lower Bollinger Band — oversold bounce',conf:68,strat:'bollinger'});
+      if(pr>mean+1.8*std&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Price above upper Bollinger Band — overbought',conf:66,strat:'bollinger'});
+    }
+
+    // Volume spike (if recent bar volume >> average)
+    if(d.length>=24){
+      var recentVol=d[d.length-1].volume||0;
+      var avgVol=d.slice(-24).reduce(function(s,x){return s+(x.volume||0)},0)/24;
+      if(recentVol>avgVol*2&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Volume spike '+((recentVol/avgVol).toFixed(1))+'x avg — strong buying pressure',conf:65,strat:'volume'});
+    }
   });
-  return moves.sort(function(a,b){return b.conf-a.conf}).slice(0,5);
+  return moves.sort(function(a,b){return b.conf-a.conf}).slice(0,8);
 }
 
 function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)return;
@@ -734,6 +788,7 @@ ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
 setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);
 onStratChange();
+initTicker();
 loadAll();
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
 setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
