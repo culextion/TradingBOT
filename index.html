@@ -126,13 +126,19 @@ select.inp{appearance:auto}
     </div>
   </aside>
   <!-- Charts -->
-  <div class="flex-1 p-2 grid gap-2 overflow-auto" style="grid-template-columns:2fr 1fr;grid-template-rows:2fr 1fr 1fr">
-    <div class="panel row-span-2" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
-    <div class="panel" id="p-corr"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
-    <div class="panel" id="p-sig"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
-    <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
-    <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
-    <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
+  <div class="flex-1 p-2 grid gap-1.5 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
+    <!-- Row 1: Main chart + sidebar (insights + signals stacked) -->
+    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
+    <div class="flex flex-col gap-1.5 min-h-0 overflow-hidden">
+      <div class="panel flex-1 min-h-0"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
+      <div class="panel flex-1 min-h-0"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
+    </div>
+    <!-- Row 2: 3 panels (ETH, SOL, Indicators) -->
+    <div class="grid grid-cols-3 gap-1.5 col-span-2 min-h-0 overflow-hidden">
+      <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
+      <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
+      <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
+    </div>
   </div>
 </div>
 
@@ -393,39 +399,47 @@ function loadAllOHLC(assets,idx){
 // ===================== UI UPDATES =====================
 function updateUI(){updateTicker();updateWL();updatePulse();updateCorr();updateSig();updateHdr();updatePos();updateAnalysis();}
 
-// JS-driven ticker — no CSS animation, pure requestAnimationFrame for seamless scroll
-var tickerPos=0,tickerHalf=0,tickerPaused=false,tickerContent='';
+// JS-driven ticker — two cloned elements, measure precisely, wrap seamlessly
+var tickerPos=0,tickerHalf=0,tickerPaused=false,tickerBuilt=false;
 function initTicker(){
-  var el=document.getElementById('ticker');if(!el)return;
-  el.addEventListener('mouseenter',function(){tickerPaused=true});
-  el.addEventListener('mouseleave',function(){tickerPaused=false});
+  var wrap=document.querySelector('.ticker-wrap');if(!wrap)return;
+  wrap.addEventListener('mouseenter',function(){tickerPaused=true});
+  wrap.addEventListener('mouseleave',function(){tickerPaused=false});
   requestAnimationFrame(tickerLoop);
 }
-function tickerLoop(ts){
-  var el=document.getElementById('ticker');
-  if(el&&!tickerPaused){
-    tickerPos-=0.8; // pixels per frame (~48px/sec at 60fps)
-    if(tickerHalf>0&&tickerPos<=-tickerHalf)tickerPos+=tickerHalf;
-    el.style.transform='translate3d('+tickerPos+'px,0,0)';
+function tickerLoop(){
+  if(!tickerPaused&&tickerHalf>0){
+    tickerPos-=0.7;
+    if(tickerPos<=-tickerHalf)tickerPos+=tickerHalf;
   }
+  var el=document.getElementById('ticker');
+  if(el)el.style.transform='translate3d('+tickerPos.toFixed(1)+'px,0,0)';
   requestAnimationFrame(tickerLoop);
 }
 function updateTicker(){
   var el=document.getElementById('ticker');if(!el)return;
-  var sep='<span style="color:var(--bd);padding:0 14px">│</span>';
+  var sep=' <span style="color:var(--bd)">│</span> ';
   var allAssets=getWL();
   var items=allAssets.map(function(a){var p=prOf(a.id),ch=chOf(a.id);if(!p)return'';var u=ch>=0;
-    return'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 16px;flex-shrink:0"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean);
+    return'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 14px;flex-shrink:0"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean);
   if(window._tickerNews&&_tickerNews.length){_tickerNews.forEach(function(n){items.push('<span class="ticker-news">\u26A1 '+n+'</span>')});}
+  if(!items.length)return;
   var content=items.join(sep);
-  var newContent=content;
-  if(newContent===tickerContent)return; // no change, don't rebuild
-  tickerContent=newContent;
-  // Two copies for seamless loop
-  var half='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:60px">'+content+'</span>';
-  el.innerHTML=half+half;
-  // Measure half width after render
-  requestAnimationFrame(function(){tickerHalf=el.scrollWidth/2;if(tickerPos<-tickerHalf)tickerPos=0;});
+  // Build: one measured block + one clone. Use a hidden measurer to get exact width.
+  var measurer=document.createElement('span');
+  measurer.style.cssText='display:inline-flex;align-items:center;flex-shrink:0;padding-right:80px;visibility:hidden;position:absolute';
+  measurer.innerHTML=content;
+  el.appendChild(measurer);
+  var w=measurer.offsetWidth;
+  el.removeChild(measurer);
+  // Ensure we have enough copies to fill screen + overflow
+  var screenW=window.innerWidth;
+  var copies=Math.ceil(screenW/w)+2;
+  var block='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:80px">'+content+'</span>';
+  var html='';for(var i=0;i<copies;i++)html+=block;
+  el.innerHTML=html;
+  tickerHalf=w;
+  if(!tickerBuilt){tickerPos=0;tickerBuilt=true;}
 }
 
 function updateWL(){var el=document.getElementById('watchlist');if(!el)return;
