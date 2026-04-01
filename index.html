@@ -63,8 +63,14 @@ select.inp{appearance:auto}
   <svg width="26" height="26" viewBox="0 0 100 100" style="display:block;flex-shrink:0">
     <!-- C shape -->
     <path d="M70,22 A38,38 0 1,0 70,78" fill="none" stroke="var(--t1)" stroke-width="11" stroke-linecap="round"/>
-    <!-- Zigzag trend line going up inside the C -->
-    <polyline points="25,62 35,52 42,58 52,44 60,48 72,24" fill="none" stroke="var(--grn)" stroke-width="4" stroke-linejoin="miter" stroke-linecap="square"/>
+    <!-- Rising bars -->
+    <rect x="26" y="58" width="7" height="16" rx="1" fill="var(--grn)" opacity=".7"/>
+    <rect x="36" y="50" width="7" height="24" rx="1" fill="var(--grn)" opacity=".8"/>
+    <rect x="46" y="55" width="7" height="19" rx="1" fill="var(--grn)" opacity=".8"/>
+    <rect x="56" y="40" width="7" height="34" rx="1" fill="var(--grn)" opacity=".9"/>
+    <rect x="66" y="28" width="7" height="46" rx="1" fill="var(--grn)"/>
+    <!-- Zigzag trend line -->
+    <polyline points="29,58 39,50 49,55 59,40 69,28" fill="none" stroke="var(--grn)" stroke-width="3.5" stroke-linejoin="miter" stroke-linecap="square"/>
   </svg>
   <span style="font-family:'Inter','Helvetica Neue',system-ui,-apple-system,sans-serif;font-size:16px;font-weight:600;letter-spacing:-.2px;line-height:28px;vertical-align:middle"><span class="text-t1" style="font-weight:700">culex</span><span class="text-t2" style="font-weight:400">trade</span></span>
   <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw">PAPER</span>
