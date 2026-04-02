@@ -15,7 +15,7 @@
 :root.light{--s0:#ffffff;--s1:#f6f8fa;--s2:#eef1f5;--s3:#e1e5ea;--bd:#d0d7de;--t1:#1f2328;--t2:#656d76;--blu:#0969da;--grn:#1a7f37;--red:#cf222e;--ylw:#9a6700;--pur:#8250df;--hover-bd:#afb8c1}
 *{box-sizing:border-box}
 body.theme-shift,body.theme-shift *,body.theme-shift *::before,body.theme-shift *::after{transition:background-color .35s ease,color .35s ease,border-color .35s ease,fill .35s ease,stroke .35s ease !important}
-body{margin:0;background:var(--s0);color:var(--t1);font-family:'Courier New',monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
 @keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}.pulse{animation:pulse 2s infinite}
@@ -47,6 +47,7 @@ select.inp{appearance:auto}
 .search-drop.open{display:block}.search-item{padding:6px 10px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;transition:background .1s}.search-item:hover{background:var(--s3)}
 .theme-toggle{background:none;border:1px solid var(--bd);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);padding:0}
 .theme-toggle:hover{color:var(--t1);border-color:var(--t1);background:var(--s2)}
+.bot-mkt-btn.on{background:var(--blu) !important;color:#fff !important}
 </style>
 </head>
 <body class="dark">
@@ -138,10 +139,11 @@ select.inp{appearance:auto}
 </div>
 
 <!-- PAGE: BOT -->
-<div id="page-bot" class="h-full overflow-y-auto p-4" style="display:none">
-<div class="max-w-6xl mx-auto grid grid-cols-3 gap-3">
-  <!-- Bot Control -->
-  <div class="panel col-span-1">
+<div id="page-bot" class="h-full overflow-y-auto p-3" style="display:none">
+<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto 1fr auto;height:calc(100vh - 72px)">
+
+  <!-- Bot Control (left sidebar, spans all rows) -->
+  <div class="panel" style="grid-row:1/5;overflow-y:auto">
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
@@ -152,17 +154,23 @@ select.inp{appearance:auto}
       </div>
       <div id="bot-warn" class="text-xs text-red bg-s3 rounded p-2 hidden"></div>
       <hr class="border-bd"/>
+      <div><label class="text-t2 text-xs block mb-1">Market</label>
+        <div class="flex gap-1">
+          <button class="btn flex-1 bg-s3 text-t1 bot-mkt-btn on" onclick="setBotMkt('crypto',this)" style="font-size:10px;padding:3px 8px">Crypto</button>
+          <button class="btn flex-1 bg-s3 text-t2 bot-mkt-btn" onclick="setBotMkt('stocks',this)" style="font-size:10px;padding:3px 8px">Stocks</button>
+        </div>
+      </div>
       <div><label class="text-t2 text-xs block mb-1">Strategy</label>
         <select id="strat-sel" class="inp" onchange="onStratChange()">
           <option value="hybrid">Smart Hybrid (Recommended)</option>
           <option value="correlation">Correlation Trading</option>
           <option value="meanrev">Mean Reversion (RSI)</option>
           <option value="momentum">Momentum (SMA Cross)</option>
-          <option value="dca">DCA</option>
+          <option value="bollinger">Bollinger Bands</option>
+          <option value="dca">DCA (Dollar Cost Average)</option>
         </select>
         <div id="strat-info" class="text-t2 text-xs mt-1 leading-relaxed"></div>
       </div>
-      <hr class="border-bd"/>
       <div><label class="text-t2 text-xs block mb-1">Fee Profile</label>
         <select id="fee-sel" class="inp"><option value="coinbase_adv">Coinbase Advanced</option><option value="binance_us">Binance.US</option><option value="kraken">Kraken</option><option value="alpaca">Alpaca</option><option value="robinhood">Robinhood</option><option value="zero_fee">No Fees (Testing)</option></select>
       </div>
@@ -176,32 +184,65 @@ select.inp{appearance:auto}
         <div><label class="text-t2" style="font-size:9px">Daily Loss Limit $</label><input type="number" id="r-dll" value="2000" class="inp"/></div>
         <div><label class="text-t2" style="font-size:9px">Trailing Stop %</label><input type="number" id="r-trail" value="3" class="inp"/></div>
       </div>
-    </div>
-  </div>
-
-  <!-- Portfolio & Positions -->
-  <div class="panel col-span-2">
-    <div class="ph"><span>Portfolio & Positions</span></div>
-    <div class="pb p-3 overflow-y-auto">
-      <div class="grid grid-cols-4 gap-3 mb-3">
-        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Portfolio Value</div><div id="pf-val" class="text-grn font-bold text-lg">$100,000</div></div>
-        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Total P&L</div><div id="pf-pnl" class="text-grn font-bold text-lg">$0.00</div></div>
-        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Total Fees Paid</div><div id="pf-fees" class="text-ylw font-bold text-lg">$0.00</div></div>
-        <div class="bg-s2 rounded p-3 text-center"><div class="text-t2" style="font-size:9px">Win Rate</div><div id="pf-wr" class="text-blu font-bold text-lg">--</div></div>
+      <hr class="border-bd"/>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">DCA Settings</div>
+      <div id="dca-settings" class="grid grid-cols-2 gap-2">
+        <div><label class="text-t2" style="font-size:9px">Interval (min)</label><input type="number" id="dca-interval" value="15" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Amount $</label><input type="number" id="dca-amount" value="500" class="inp"/></div>
+        <div class="col-span-2"><label class="text-t2" style="font-size:9px">Target Assets</label>
+          <div id="dca-targets" class="flex flex-wrap gap-1 mt-1"></div>
+        </div>
       </div>
-      <div class="text-t2 text-xs font-bold uppercase mb-2">Open Positions</div>
-      <div id="pos-list" class="space-y-1 mb-3"><div class="text-t2 text-xs text-center py-4">No open positions</div></div>
-      <div class="text-t2 text-xs font-bold uppercase mb-2">Next Projected Moves</div>
-      <div id="next-moves" class="space-y-1 mb-3"></div>
-      <div class="text-t2 text-xs font-bold uppercase mb-2">Trade History</div>
-      <div id="trade-log" class="space-y-1 max-h-48 overflow-y-auto"><div class="text-t2 text-xs text-center py-2">No trades yet</div></div>
+      <hr class="border-bd"/>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">Performance</div>
+      <div class="space-y-1" style="font-size:10px">
+        <div class="flex justify-between text-t2"><span>Trades</span><span id="perf-trades" class="text-t1 font-bold">0</span></div>
+        <div class="flex justify-between text-t2"><span>Win Rate</span><span id="perf-wr" class="text-t1 font-bold">--</span></div>
+        <div class="flex justify-between text-t2"><span>Avg P&L/Trade</span><span id="perf-avg" class="text-t1 font-bold">--</span></div>
+        <div class="flex justify-between text-t2"><span>Sharpe Ratio</span><span id="perf-sharpe" class="text-t1 font-bold">--</span></div>
+        <div class="flex justify-between text-t2"><span>Max Drawdown</span><span id="perf-dd" class="text-t1 font-bold">--</span></div>
+        <div class="flex justify-between text-t2"><span>Profit Factor</span><span id="perf-pf" class="text-t1 font-bold">--</span></div>
+      </div>
     </div>
   </div>
 
-  <!-- Bot Activity Log -->
-  <div class="panel col-span-3">
+  <!-- KPI Row (top, spans both right columns) -->
+  <div class="grid grid-cols-5 gap-2" style="grid-column:2/4">
+    <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Portfolio Value</div><div id="pf-val" class="text-grn font-bold" style="font-size:15px">$100,000</div></div>
+    <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Total P&L</div><div id="pf-pnl" class="text-grn font-bold" style="font-size:15px">$0.00</div></div>
+    <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Total Fees Paid</div><div id="pf-fees" class="text-ylw font-bold" style="font-size:15px">$0.00</div></div>
+    <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Win Rate</div><div id="pf-wr" class="text-blu font-bold" style="font-size:15px">--</div></div>
+    <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Available Cash</div><div id="pf-cash" class="text-t1 font-bold" style="font-size:15px">$100,000</div></div>
+  </div>
+
+  <!-- Equity Curve (middle-left) -->
+  <div class="panel">
+    <div class="ph"><span>Equity Curve</span></div>
+    <div class="pb" id="equity-chart" style="min-height:180px"><div class="flex items-center justify-center h-full text-t2 text-xs">Start bot to track equity</div></div>
+  </div>
+
+  <!-- Open Positions (middle-right) -->
+  <div class="panel">
+    <div class="ph"><span>Open Positions</span></div>
+    <div class="pb p-2 overflow-y-auto" id="pos-list"><div class="text-t2 text-xs text-center py-4">No open positions</div></div>
+  </div>
+
+  <!-- Next Projected Moves + Signals (bottom-left) -->
+  <div class="panel" style="min-height:0">
+    <div class="ph"><span>Signals & Next Moves</span></div>
+    <div class="pb p-2 overflow-y-auto" id="next-moves"><div class="text-t2 text-xs text-center py-2">Bot is monitoring...</div></div>
+  </div>
+
+  <!-- Trade History (bottom-right) -->
+  <div class="panel" style="min-height:0">
+    <div class="ph"><span>Trade History</span></div>
+    <div class="pb p-2 overflow-y-auto" id="trade-log"><div class="text-t2 text-xs text-center py-2">No trades yet</div></div>
+  </div>
+
+  <!-- Bot Activity Log (full width bottom) -->
+  <div class="panel" style="grid-column:2/4;max-height:140px">
     <div class="ph"><span>Bot Activity Log</span></div>
-    <div class="pb p-3 overflow-y-auto max-h-48" id="bot-log"><div class="text-t2 text-xs text-center">Start the bot to see activity here</div></div>
+    <div class="pb p-2 overflow-y-auto" id="bot-log" style="font-family:'SF Mono','Fira Code',monospace;font-size:11px"><div class="text-t2 text-xs text-center">Start the bot to see activity here</div></div>
   </div>
 </div>
 </div>
@@ -289,7 +330,8 @@ var STRATS={
   correlation:{name:'Correlation',desc:'Buys the lagging asset when correlated pairs diverge, expecting mean reversion.'},
   meanrev:{name:'Mean Reversion',desc:'Buys when RSI < 30 (oversold), sells when RSI > 70 (overbought).'},
   momentum:{name:'Momentum',desc:'Buys on golden cross (fast SMA > slow SMA), sells on death cross.'},
-  dca:{name:'DCA',desc:'Invests fixed amount at regular intervals regardless of price.'},
+  bollinger:{name:'Bollinger Bands',desc:'Buys when price drops below lower Bollinger Band (oversold bounce), sells when above upper band.'},
+  dca:{name:'DCA',desc:'Dollar-cost averages into selected assets at configurable intervals. Ignores signals — buys on schedule.'},
 };
 
 // ===================== STATE =====================
@@ -563,7 +605,28 @@ function analyzeMarket(){
       if(recentVol>avgVol*2&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Volume spike '+((recentVol/avgVol).toFixed(1))+'x avg — strong buying pressure',conf:65,strat:'volume'});
     }
   });
-  return moves.sort(function(a,b){return b.conf-a.conf}).slice(0,8);
+
+  // Correlation divergence signals
+  var co=mkt==='crypto'?CORR_C:CORR_S;
+  var assets=getAssets();
+  for(var i=0;i<assets.length;i++){
+    for(var j=i+1;j<assets.length;j++){
+      var a1=assets[i],a2=assets[j];
+      var key=a1.sym+'-'+a2.sym,corr=co[key]||co[a2.sym+'-'+a1.sym]||0;
+      if(corr>=0.7){
+        var ch1=chOf(a1.id)||0,ch2=chOf(a2.id)||0,diff=Math.abs(ch1-ch2);
+        if(diff>3){
+          var lagging=ch1<ch2?a1:a2,leading=ch1<ch2?a2:a1;
+          var lch=ch1<ch2?ch1:ch2;
+          if(lch<0&&!account.positions.find(function(p){return p.id===lagging.id})){
+            moves.push({sym:lagging.sym,id:lagging.id,dir:'buy',reason:lagging.sym+' lagging '+leading.sym+' by '+diff.toFixed(1)+'% (corr: '+corr.toFixed(2)+') — mean reversion expected',conf:Math.min(85,60+diff*3),strat:'correlation'});
+          }
+        }
+      }
+    }
+  }
+
+  return moves.sort(function(a,b){return b.conf-a.conf}).slice(0,10);
 }
 
 function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)return;
@@ -644,24 +707,109 @@ window.stopBot=function(){bot.on=false;clearInterval(bot.iv);
 window.killAll=function(){stopBot();var s=[];account.positions.slice().forEach(function(p){sellA(p.id);s.push(p.sym)});
   blog('KILL — closed: '+s.join(', '));if(s.length)alert('Closed '+s.length+' positions')};
 
+// Bot market switching
+window.setBotMkt=function(m,btn){
+  mkt=m;sel=getAssets()[0].id;
+  document.querySelectorAll('.bot-mkt-btn').forEach(function(b){b.classList.remove('on');b.classList.add('text-t2');b.classList.remove('text-t1');});
+  btn.classList.add('on');btn.classList.add('text-t1');btn.classList.remove('text-t2');
+  loadAll();updateDcaTargets();blog('Switched to '+m+' market');
+};
+
+// DCA target checkboxes
+function updateDcaTargets(){
+  var el=document.getElementById('dca-targets');if(!el)return;
+  el.innerHTML=getAssets().map(function(a){
+    return'<label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="dca-chk" value="'+a.id+'" checked style="width:12px;height:12px">'+a.sym+'</label>';
+  }).join('');
+}
+
+// Equity curve tracking
+var equityCurve=[];
+function trackEquity(){
+  var v=portVal();
+  equityCurve.push({time:Date.now(),value:v});
+  if(equityCurve.length>500)equityCurve.shift();
+  renderEquityCurve();
+}
+function renderEquityCurve(){
+  var el=document.getElementById('equity-chart');if(!el||equityCurve.length<2)return;
+  var pts=equityCurve,mn=Infinity,mx=-Infinity;
+  pts.forEach(function(p){if(p.value<mn)mn=p.value;if(p.value>mx)mx=p.value});
+  var rg=mx-mn||1,w=el.offsetWidth||400,h=el.offsetHeight||160,pad=20;
+  var svg='<svg width="'+w+'" height="'+h+'" style="display:block">';
+  // Grid lines
+  for(var i=0;i<4;i++){var y=pad+(h-2*pad)*i/3;svg+='<line x1="0" y1="'+y+'" x2="'+w+'" y2="'+y+'" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>';
+    svg+='<text x="4" y="'+(y-3)+'" fill="var(--t2)" font-size="9">$'+(mx-rg*i/3).toFixed(0)+'</text>';}
+  // Line
+  var last=pts[pts.length-1],first=pts[0],up=last.value>=first.value;
+  var path=pts.map(function(p,i){var x=(i/(pts.length-1))*(w-10)+5;var y=pad+(1-(p.value-mn)/rg)*(h-2*pad);return(i===0?'M':'L')+x.toFixed(1)+','+y.toFixed(1)}).join(' ');
+  svg+='<path d="'+path+'" fill="none" stroke="'+(up?'var(--grn)':'var(--red)')+'" stroke-width="2"/>';
+  // Area fill
+  var areaPath=path+' L'+(w-5)+','+(h-pad)+' L5,'+(h-pad)+' Z';
+  svg+='<path d="'+areaPath+'" fill="'+(up?'var(--grn)':'var(--red)')+'" opacity="0.08"/>';
+  svg+='</svg>';
+  el.innerHTML=svg;
+}
+
+// Update performance sidebar
+function updateBotPerf(){
+  var m=RiskEngine.calcMetrics(account.trades,account.start);
+  if(!m||!m.totalTrades)return;
+  setText('perf-trades',m.totalTrades);
+  setText('perf-wr',(m.winRate*100).toFixed(0)+'%');
+  var avgPnl=m.totalTrades>0?m.netProfit/m.totalTrades:0;
+  var ae=document.getElementById('perf-avg');if(ae){ae.textContent=(avgPnl>=0?'+':'-')+'$'+fp(Math.abs(avgPnl));ae.className=(avgPnl>=0?'text-grn':'text-red')+' font-bold';}
+  setText('perf-sharpe',m.sharpe?m.sharpe.toFixed(2):'--');
+  setText('perf-dd',m.maxDrawdown?m.maxDrawdown.toFixed(1)+'%':'--');
+  setText('perf-pf',m.profitFactor?m.profitFactor.toFixed(2):'--');
+  setText('pf-cash','$'+fp(account.cash));
+}
+
 function runBot(){if(!bot.on)return;
   var cs=ConnGuard.canTradeSafely();if(!cs.safe){blog('PAUSED: '+cs.reason);return;}
   if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
 
   // Stop/trail check
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
+  var trail=parseFloat(gv('r-trail')||3)/100;
   account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
+    // Trailing stop: track highest price since entry
+    if(!pos.highWater||pr>pos.highWater)pos.highWater=pr;
+    var trailPct=pos.highWater?(pr-pos.highWater)/pos.highWater:0;
+    if(trail>0&&pos.highWater&&pct>0&&trailPct<=-trail){
+      var r='Trailing stop triggered at '+((trailPct*100).toFixed(1))+'% from peak $'+fp(pos.highWater);
+      blog('TRAIL STOP: '+pos.sym+' — fell '+((Math.abs(trailPct)*100).toFixed(1))+'% from peak');sellA(pos.id,null,r);return;}
     if(pct<=-sl){var r='Stop loss triggered at '+((pct*100).toFixed(1))+'% (limit: -'+(sl*100).toFixed(0)+'%)';blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}
     else if(pct>=tp){var r='Take profit hit at +'+((pct*100).toFixed(1))+'% (target: +'+(tp*100).toFixed(0)+'%)';blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}});
+
+  trackEquity();updateBotPerf();
 
   var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
   var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
 
+  // DCA mode
+  if(bot.strat==='dca'){
+    var dcaInt=parseFloat(gv('dca-interval')||15)*60*1000;
+    var now=Date.now();
+    if(!bot.lastDca||now-bot.lastDca>=dcaInt){
+      var dcaAmt=parseFloat(gv('dca-amount')||500);
+      var targets=[];document.querySelectorAll('.dca-chk:checked').forEach(function(c){targets.push(c.value)});
+      if(!targets.length)targets=getAssets().map(function(a){return a.id});
+      var perAsset=dcaAmt/targets.length;
+      targets.forEach(function(id){
+        if(perAsset>0&&perAsset<=account.cash){
+          var a=findA(id);buyA(id,perAsset,'DCA — scheduled buy of $'+fp(perAsset)+' per '+(gv('dca-interval')||15)+'min interval');
+        }
+      });
+      bot.lastDca=now;
+    }
+    updateNextMoves();return;
+  }
+
   var moves=analyzeMarket();
   if(bot.strat==='hybrid'){
-    // Smart hybrid: only act on signals with conf > 70 and that at least 2 strategies agree on
     var buys={};moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;}});
-    for(var id in buys){if(buys[id]>=1&&!account.positions.find(function(p){return p.id===id})){
+    for(var id in buys){if(buys[id]>=2&&!account.positions.find(function(p){return p.id===id})){
       var m=moves.find(function(x){return x.id===id&&x.dir==='buy'});
       blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt,m.reason+' (conf: '+m.conf+'%, strategy: '+m.strat+')');return;}}
   } else {
@@ -675,7 +823,8 @@ function blog(msg){bot.logs.unshift({t:new Date().toLocaleTimeString(),m:msg});i
   var el=document.getElementById('bot-log');if(!el)return;
   el.innerHTML=bot.logs.map(function(l){return'<div class="text-xs mb-1"><span class="text-t2">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>'}).join('');}
 
-window.onStratChange=function(){var s=gv('strat-sel');var el=document.getElementById('strat-info');if(el&&STRATS[s])el.textContent=STRATS[s].desc;};
+window.onStratChange=function(){var s=gv('strat-sel');var el=document.getElementById('strat-info');if(el&&STRATS[s])el.textContent=STRATS[s].desc;
+  var dca=document.getElementById('dca-settings');if(dca)dca.style.display=s==='dca'?'grid':'none';};
 
 // ===================== SIMULATOR =====================
 window.runSim=function(){var el=document.getElementById('sim-out');if(!el)return;
@@ -734,7 +883,7 @@ window.showPage=function(p,btn){
   ['dashboard','bot','analysis'].forEach(function(id){document.getElementById('page-'+id).style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard')setTimeout(resizeCharts,200);
-  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();}
+  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();if(equityCurve.length)renderEquityCurve();}
   if(p==='analysis')updateAnalysis();};
 
 window.switchMkt=function(m,btn){mkt=m;sel=getAssets()[0].id;tileDays={main:7,c2:7,c3:7};
@@ -815,6 +964,7 @@ setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textCon
 onStratChange();
 initTicker();
 loadAll();
+updateDcaTargets();
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
 setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
 
