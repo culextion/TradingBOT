@@ -126,15 +126,15 @@ select.inp{appearance:auto}
   <!-- Charts -->
   <div class="flex-1 p-2 grid gap-1.5 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
     <!-- Row 1: Main chart + sidebar (insights + signals stacked) -->
-    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
+    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
     <div class="flex flex-col gap-1.5 min-h-0 overflow-hidden">
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
     </div>
     <!-- Row 2: 3 panels (ETH, SOL, Indicators) -->
     <div class="grid grid-cols-3 gap-1.5 col-span-2 min-h-0 overflow-hidden">
-      <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
-      <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
+      <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c2',0.04,this)">1H</button><button class="tf" onclick="tfClick('c2',1,this)">1D</button><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
+      <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c3',0.04,this)">1H</button><button class="tf" onclick="tfClick('c3',1,this)">1D</button><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
       <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
     </div>
   </div>
@@ -732,10 +732,29 @@ function loadTile(key,assetId,days){
   var cid='c-'+key;tileAsset[key]=assetId;tileDays[key]=days;
   var el=document.getElementById(cid);if(el)el.innerHTML='<div class="flex items-center justify-center h-full"><div class="w-5 h-5 border-2 border-bd border-t-blu rounded-full spin"></div></div>';
   var a=findA(assetId);if(a)setText('t-'+key,a.sym+'/USD');
+
+  // For very short timeframes (< 1 day), use live accumulated candles if available
+  if(days<1&&liveCandles[assetId]&&liveCandles[assetId].length>3){
+    var cutoff=Math.floor(Date.now()/1000)-(days*86400);
+    var filtered=liveCandles[assetId].filter(function(c){return c.time>=cutoff});
+    if(filtered.length>3){loadCh(cid,filtered,key);setPr('pr-'+key,assetId);return;}
+  }
+
   if(mkt==='crypto'){
-    cgOHLC(assetId,days).then(function(d){ohlc[assetId]=d;loadCh(cid,d,key);setPr('pr-'+key,assetId);}).catch(function(){if(el)el.innerHTML='<div class="flex items-center justify-center h-full text-red text-xs">Failed — retrying...</div>';setTimeout(function(){loadTile(key,assetId,days)},5000);});
+    // CoinGecko: days<1 gives 5-min candles, 1-90 gives hourly, 90+ gives daily
+    var cgDays=Math.max(1,Math.ceil(days));
+    cgOHLC(assetId,cgDays).then(function(d){
+      ohlc[assetId]=d;
+      // For sub-day views, filter to just the requested window
+      if(days<7){
+        var cutoff=Math.floor(Date.now()/1000)-(days*86400);
+        d=d.filter(function(c){return c.time>=cutoff});
+      }
+      loadCh(cid,d,key);setPr('pr-'+key,assetId);
+    }).catch(function(){if(el)el.innerHTML='<div class="flex items-center justify-center h-full text-red text-xs">Failed — retrying...</div>';setTimeout(function(){loadTile(key,assetId,days)},5000);});
   }else{
-    if(a&&a.base){stkData[assetId]=genStk(a,dToB(days));var dd=stkData[assetId];prices[assetId]={usd:dd[dd.length-1].close,usd_24h_change:((dd[dd.length-1].close-dd[0].open)/dd[0].open)*100};}
+    var bars=days<1?Math.max(12,Math.round(days*288)):dToB(days); // 288 = 5min bars per day
+    if(a&&a.base){stkData[assetId]=genStk(a,bars);}
     loadCh(cid,stkData[assetId],key);setPr('pr-'+key,assetId);
   }
 }
