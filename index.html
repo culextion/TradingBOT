@@ -77,29 +77,24 @@ select.inp{appearance:auto}
     <circle cx="69" cy="26" r="2.5" fill="var(--grn)"/>
   </svg>
   <span style="font-family:'Inter','Helvetica Neue',system-ui,-apple-system,sans-serif;font-size:16px;font-weight:600;letter-spacing:-.2px;line-height:28px;vertical-align:middle"><span class="text-t1" style="font-weight:700">culex</span><span class="text-t2" style="font-weight:400">trade</span></span>
-  <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw">PAPER</span>
-  <button id="auth-btn" class="text-xs border border-bd rounded px-2 py-0.5 text-t2 hover:text-blu hover:border-blu" onclick="document.getElementById('auth-overlay').style.display='flex'">Sign In</button>
+  <div class="flex items-center ml-6">
+    <button class="nav-tab on" onclick="showPage('dashboard',this)">Dashboard</button>
+    <button class="nav-tab" onclick="showPage('bot',this)">Trading Bot</button>
+    <button class="nav-tab" onclick="showPage('analysis',this)">Market Analysis</button>
+  </div>
 </div>
 <div class="flex items-center gap-5 text-xs">
   <div class="text-right"><div class="text-t2" style="font-size:9px">Portfolio</div><div id="h-port" class="text-grn font-bold">$100,000.00</div></div>
   <div class="text-right"><div class="text-t2" style="font-size:9px">Day P&L</div><div id="h-pnl" class="text-grn font-bold">$0.00</div></div>
   <div class="text-right"><div class="text-t2" style="font-size:9px">Positions</div><div id="h-pos" class="font-bold">0</div></div>
-  <div class="text-right"><div class="text-t2" style="font-size:9px">Bot</div><div id="h-bot" class="text-red font-bold">OFF</div></div>
-</div>
-</header>
-
-<!-- MAIN NAV -->
-<nav class="bg-s1 border-b border-bd flex items-center px-4 flex-shrink-0">
-<button class="nav-tab on" onclick="showPage('dashboard',this)">Dashboard</button>
-<button class="nav-tab" onclick="showPage('bot',this)">Trading Bot</button>
-<button class="nav-tab" onclick="showPage('analysis',this)">Market Analysis</button>
-<div style="margin-left:auto">
+  <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw cursor-pointer" onclick="document.querySelector('.nav-tab[onclick*=bot]').click()" title="Go to Trading Bot">PAPER</span>
+  <button id="auth-btn" class="text-xs border border-bd rounded px-2 py-0.5 text-t2 hover:text-blu hover:border-blu" onclick="document.getElementById('auth-overlay').style.display='flex'">Sign In</button>
   <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
     <svg id="theme-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
     <svg id="theme-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
   </button>
 </div>
-</nav>
+</header>
 
 <!-- ===== PAGES ===== -->
 <div class="flex-1 overflow-hidden">
@@ -506,13 +501,26 @@ function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,ti
 
 function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
   if(!account.positions.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">No open positions</div>';return;}
-  el.innerHTML=account.positions.map(function(p){var pr=prOf(p.id),pnl=pr?(pr-p.avgPrice)*p.qty:0,pct=p.avgPrice?(pr-p.avgPrice)/p.avgPrice*100:0;
-    return'<div class="metric"><div><span class="font-bold text-t1">'+p.sym+'</span> <span class="text-t2">'+p.qty.toFixed(4)+'</span></div><div class="text-right"><span class="'+(pnl>=0?'text-grn':'text-red')+' font-bold">'+(pnl>=0?'+':'')+fp(Math.abs(pnl))+' ('+pct.toFixed(1)+'%)</span> <button class="text-red text-xs ml-1" onclick="sellA(\''+p.id+'\')">Sell</button></div></div>'}).join('');}
+  el.innerHTML=account.positions.map(function(p){var pr=prOf(p.id),pnl=pr?(pr-p.avgPrice)*p.qty:0,pct=p.avgPrice?(pr-p.avgPrice)/p.avgPrice*100:0;var mktVal=pr?pr*p.qty:0;
+    var h='<div style="background:var(--s2);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:11px;border-left:3px solid '+(pnl>=0?'var(--grn)':'var(--red)')+'">';
+    h+='<div class="flex justify-between items-center"><div><span class="font-bold text-t1">'+p.sym+'</span> <span class="text-t2">'+p.qty.toFixed(4)+' @ $'+fp(p.avgPrice)+'</span></div>';
+    h+='<div class="flex items-center gap-3"><span class="'+(pnl>=0?'text-grn':'text-red')+' font-bold">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+' ('+pct.toFixed(1)+'%)</span>';
+    h+='<button class="btn btn-r" style="padding:2px 8px;font-size:10px" onclick="sellA(\''+p.id+'\',null,\'Manual sell\')">Sell</button></div></div>';
+    h+='<div class="text-t2 mt-1" style="font-size:10px">Current: $'+fp(pr)+' · Value: $'+fp(mktVal)+' · Cost: $'+fp(p.avgPrice*p.qty)+'</div></div>';
+    return h;}).join('');}
 
 function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)return;
   if(!account.trades.length){el.innerHTML='<div class="text-t2 text-xs text-center py-2">No trades yet</div>';return;}
-  el.innerHTML=account.trades.slice(0,20).map(function(t){var c=t.type==='BUY'?'text-blu':t.pnl>=0?'text-grn':'text-red';
-    return'<div class="metric"><div><span class="font-bold '+c+'">'+t.type+'</span> '+t.sym+'</div><div class="text-right text-t2">$'+fp(t.price)+(t.pnl!==undefined?' P&L:'+(t.pnl>=0?'+':'')+fp(Math.abs(t.pnl)):'')+' <span class="text-ylw">fee:$'+fp(t.fees||0)+'</span></div></div>'}).join('');}
+  el.innerHTML=account.trades.slice(0,30).map(function(t){
+    var c=t.type==='BUY'?'text-blu':t.pnl>=0?'text-grn':'text-red';
+    var totalCost=t.type==='BUY'?(t.amount||0):(t.qty*(t.price||0));
+    var h='<div style="background:var(--s2);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:11px;border-left:3px solid '+(t.type==='BUY'?'var(--blu)':t.pnl>=0?'var(--grn)':'var(--red)')+'">';
+    h+='<div class="flex justify-between items-center mb-1"><div><span class="font-bold '+c+'">'+t.type+'</span> <span class="font-bold text-t1">'+t.sym+'</span> <span class="text-t2">× '+t.qty.toFixed(4)+'</span></div><span class="text-t2">'+t.time+'</span></div>';
+    h+='<div class="flex justify-between text-t2" style="font-size:10px"><div>Price: $'+fp(t.price)+' · Total: $'+fp(totalCost)+' · Fee: <span class="text-ylw">$'+fp(t.fees||0)+'</span></div>';
+    if(t.pnl!==undefined)h+='<span class="font-bold '+(t.pnl>=0?'text-grn':'text-red')+'">'+(t.pnl>=0?'+':'-')+'$'+fp(Math.abs(t.pnl))+'</span>';
+    h+='</div>';
+    if(t.reason)h+='<div class="text-t2 mt-1" style="font-size:10px;font-style:italic">\u2192 '+t.reason+'</div>';
+    h+='</div>';return h;}).join('');}
 
 function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)return;
   var moves=analyzeMarket();
@@ -600,21 +608,21 @@ function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)re
 }
 
 // ===================== TRADING ENGINE =====================
-function buyA(id,amt){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
+function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
   var cost=calculateTradeCost(amt,gv('fee-sel')||'coinbase_adv','buy',.03);var eff=amt-cost.total;if(eff<=0)return null;
   var qty=eff/pr;account.cash-=amt;account.fees+=cost.total;
   var ex=account.positions.find(function(p){return p.id===id});
   if(ex){var tq=ex.qty+qty;ex.avgPrice=(ex.avgPrice*ex.qty+pr*qty)/tq;ex.qty=tq;}
   else account.positions.push({id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,avgPrice:pr});
-  var t={type:'BUY',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:amt,fees:cost.total,time:new Date().toLocaleTimeString()};
+  var t={type:'BUY',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:amt,fees:cost.total,time:new Date().toLocaleTimeString(),reason:reason||null};
   account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
 
-window.sellA=function(id,qty){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
+window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
   var pr=prOf(id);if(!pr)return null;if(!qty||qty>=pos.qty)qty=pos.qty;
   var gross=qty*pr;var cost=calculateTradeCost(gross,gv('fee-sel')||'coinbase_adv','sell',.03);var net=gross-cost.total;
   var pnl=net-(qty*pos.avgPrice);account.cash+=net;account.dayPnL+=pnl;bot.pnl+=pnl;account.fees+=cost.total;
   pos.qty-=qty;if(pos.qty<.00001)account.positions=account.positions.filter(function(p){return p.id!==id});
-  var t={type:'SELL',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:net,pnl:pnl,fees:cost.total,time:new Date().toLocaleTimeString()};
+  var t={type:'SELL',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:net,pnl:pnl,fees:cost.total,time:new Date().toLocaleTimeString(),reason:reason||null};
   account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;};
 
 function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p.qty*prOf(p.id)});return v;}
@@ -623,16 +631,14 @@ function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p
 window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';
   document.getElementById('btn-start').style.display='none';document.getElementById('btn-stop').style.display='';
   setText('bot-status','RUNNING');document.getElementById('bot-status').className='font-bold text-xs text-grn';
-  setText('h-bot','ON');document.getElementById('h-bot').className='text-grn font-bold';
-  document.getElementById('mode-badge').textContent='BOT ON';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-grn border-grn pulse';
+  document.getElementById('mode-badge').textContent='BOT ON';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-grn border-grn pulse cursor-pointer';
   blog('Bot started — strategy: '+(STRATS[bot.strat]||{name:bot.strat}).name);
   runBot();bot.iv=setInterval(runBot,15000);};
 
 window.stopBot=function(){bot.on=false;clearInterval(bot.iv);
   document.getElementById('btn-start').style.display='';document.getElementById('btn-stop').style.display='none';
   setText('bot-status','STOPPED');document.getElementById('bot-status').className='font-bold text-xs text-red';
-  setText('h-bot','OFF');document.getElementById('h-bot').className='text-red font-bold';
-  document.getElementById('mode-badge').textContent='PAPER';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-ylw border-ylw';
+  document.getElementById('mode-badge').textContent='PAPER';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-ylw border-ylw cursor-pointer';
   blog('Bot stopped');};
 
 window.killAll=function(){stopBot();var s=[];account.positions.slice().forEach(function(p){sellA(p.id);s.push(p.sym)});
@@ -645,8 +651,8 @@ function runBot(){if(!bot.on)return;
   // Stop/trail check
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
   account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
-    if(pct<=-sl){blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id);}
-    else if(pct>=tp){blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id);}});
+    if(pct<=-sl){var r='Stop loss triggered at '+((pct*100).toFixed(1))+'% (limit: -'+(sl*100).toFixed(0)+'%)';blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}
+    else if(pct>=tp){var r='Take profit hit at +'+((pct*100).toFixed(1))+'% (target: +'+(tp*100).toFixed(0)+'%)';blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}});
 
   var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
   var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
@@ -657,10 +663,10 @@ function runBot(){if(!bot.on)return;
     var buys={};moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;}});
     for(var id in buys){if(buys[id]>=1&&!account.positions.find(function(p){return p.id===id})){
       var m=moves.find(function(x){return x.id===id&&x.dir==='buy'});
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt);return;}}
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt,m.reason+' (conf: '+m.conf+'%, strategy: '+m.strat+')');return;}}
   } else {
     var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})});
-    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt);}
+    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt,m.reason+' (conf: '+m.conf+'%, strategy: '+m.strat+')');}
   }
   updateNextMoves();
 }
