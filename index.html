@@ -551,71 +551,142 @@ function cgPr(){var ids=(mkt==='crypto'?getWL():[]).map(function(a){return a.id}
 function cgOHLC(id,days){return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
   return Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[]})}
 
-// ===================== FINNHUB (Real Stock Data) =====================
-var FH_KEY='d77b80hr01qp6afl07fgd77b80hr01qp6afl07g0';
-var fhWs=null;
+// ===================== FINNHUB (Real Market Data) =====================
+var FH_STOCK_KEY='d77b80hr01qp6afl07fgd77b80hr01qp6afl07g0';
+var FH_CRYPTO_KEY='d77bga1r01qp6afl13ogd77bga1r01qp6afl13p0';
+var fhStockWs=null,fhCryptoWs=null;
+var liveCandles={}; // {symbol: [{time,open,high,low,close},...]}
+var candleInterval=300; // 5-minute candles from live ticks
+var lastTickerUIUpdate=0;
 
-// Fetch real-time quote for a stock
-function fhQuote(symbol){
-  return fetch('https://finnhub.io/api/v1/quote?symbol='+symbol+'&token='+FH_KEY).then(function(r){return r.json()});
+function fhKey(){return mkt==='crypto'?FH_CRYPTO_KEY:FH_STOCK_KEY}
+function fhSymbol(a){return mkt==='crypto'?'BINANCE:'+a.sym+'USDT':a.sym}
+
+// Fetch quote
+function fhQuote(symbol,key){
+  return fetch('https://finnhub.io/api/v1/quote?symbol='+symbol+'&token='+(key||fhKey())).then(function(r){return r.json()});
 }
 
-// Fetch quotes for all stock watchlist items
+// Fetch quotes for all watchlist items
 function fhAllQuotes(assets){
+  var key=fhKey();
   var promises=assets.map(function(a,i){
     return new Promise(function(resolve){
-      // Stagger to stay under 60/min
       setTimeout(function(){
-        fhQuote(a.sym).then(function(q){
+        var sym=fhSymbol(a);
+        fhQuote(sym,key).then(function(q){
           if(q&&q.c){
             prices[a.id]={usd:q.c,usd_24h_change:q.dp||0,high:q.h,low:q.l,open:q.o,prevClose:q.pc};
-            // Update base price for chart generation to match real price
-            a.base=q.c;
+            if(a.base)a.base=q.c;
+            // Seed candle data from quote
+            seedCandle(a.id,q);
           }
           resolve();
         }).catch(function(){resolve()});
-      },i*200); // 200ms apart = max 300/min, well under limit
+      },i*150);
     });
   });
   return Promise.all(promises);
 }
 
-// Search stocks via Finnhub
+// Search
 function fhSearch(query){
-  return fetch('https://finnhub.io/api/v1/search?q='+encodeURIComponent(query)+'&token='+FH_KEY).then(function(r){return r.json()});
+  return fetch('https://finnhub.io/api/v1/search?q='+encodeURIComponent(query)+'&token='+FH_STOCK_KEY).then(function(r){return r.json()});
 }
 
-// WebSocket for real-time stock price updates
-function fhConnectWS(symbols){
-  if(fhWs){try{fhWs.close()}catch(e){}}
-  fhWs=new WebSocket('wss://ws.finnhub.io?token='+FH_KEY);
-  fhWs.onopen=function(){
-    symbols.forEach(function(sym){fhWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
-    console.log('Finnhub WS connected for',symbols.join(', '));
+// ---- REAL-TIME CANDLE ENGINE ----
+// Seeds initial candle from quote data (creates a starting point)
+function seedCandle(assetId,quote){
+  if(!liveCandles[assetId])liveCandles[assetId]=[];
+  var now=Math.floor(Date.now()/1000);
+  var bucketTime=now-now%candleInterval;
+  var candles=liveCandles[assetId];
+  if(!candles.length||candles[candles.length-1].time!==bucketTime){
+    candles.push({time:bucketTime,open:quote.o||quote.c,high:quote.h||quote.c,low:quote.l||quote.c,close:quote.c});
+  }
+}
+
+// Process a live price tick into candles
+function processTick(assetId,price,timestamp){
+  if(!liveCandles[assetId])liveCandles[assetId]=[];
+  var ts=timestamp||Math.floor(Date.now()/1000);
+  var bucketTime=ts-ts%candleInterval;
+  var candles=liveCandles[assetId];
+  if(!candles.length||candles[candles.length-1].time<bucketTime){
+    // New candle
+    candles.push({time:bucketTime,open:price,high:price,low:price,close:price});
+    if(candles.length>500)candles.shift();
+  } else {
+    // Update current candle
+    var c=candles[candles.length-1];
+    if(price>c.high)c.high=price;
+    if(price<c.low)c.low=price;
+    c.close=price;
+  }
+  // Update chart series if this asset is displayed
+  Object.keys(tileAsset).forEach(function(key){
+    if(tileAsset[key]===assetId&&ser[key]){
+      var c=candles[candles.length-1];
+      ser[key].update({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close});
+    }
+  });
+}
+
+// ---- WEBSOCKET CONNECTIONS ----
+function fhConnectStockWS(symbols){
+  if(fhStockWs){try{fhStockWs.close()}catch(e){}}
+  fhStockWs=new WebSocket('wss://ws.finnhub.io?token='+FH_STOCK_KEY);
+  fhStockWs.onopen=function(){
+    symbols.forEach(function(sym){fhStockWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
+    console.log('Stock WS connected:',symbols.length,'symbols');
   };
-  fhWs.onmessage=function(e){
-    try{
-      var msg=JSON.parse(e.data);
-      if(msg.type==='trade'&&msg.data&&msg.data.length){
-        msg.data.forEach(function(trade){
-          // Find asset by symbol
-          var sym=trade.s;
-          var asset=STOCKS.find(function(s){return s.sym===sym})||ALL_STOCKS.find(function(s){return s.sym===sym});
-          if(asset&&trade.p){
-            var prev=prices[asset.id];
-            var prevPrice=prev?prev.usd:trade.p;
-            var prevClose=prev?prev.prevClose||prevPrice:trade.p;
-            prices[asset.id]={usd:trade.p,usd_24h_change:((trade.p-prevClose)/prevClose)*100,prevClose:prevClose};
-            ConnGuard.lastPriceUpdate=Date.now();ConnGuard.dataQuality='fresh';
-          }
-        });
+  fhStockWs.onmessage=function(e){handleFhMessage(e.data,'stock')};
+  fhStockWs.onclose=function(){setTimeout(function(){if(mkt==='stocks')fhConnectStockWS(symbols)},5000)};
+}
+
+function fhConnectCryptoWS(symbols){
+  if(fhCryptoWs){try{fhCryptoWs.close()}catch(e){}}
+  fhCryptoWs=new WebSocket('wss://ws.finnhub.io?token='+FH_CRYPTO_KEY);
+  fhCryptoWs.onopen=function(){
+    symbols.forEach(function(sym){fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
+    console.log('Crypto WS connected:',symbols.length,'symbols');
+  };
+  fhCryptoWs.onmessage=function(e){handleFhMessage(e.data,'crypto')};
+  fhCryptoWs.onclose=function(){setTimeout(function(){if(mkt==='crypto')fhConnectCryptoWS(symbols)},5000)};
+}
+
+function handleFhMessage(data,type){
+  try{
+    var msg=JSON.parse(data);
+    if(msg.type!=='trade'||!msg.data)return;
+    msg.data.forEach(function(trade){
+      var sym=trade.s;var price=trade.p;var ts=Math.floor(trade.t/1000);
+      // Find matching asset
+      var asset;
+      if(type==='crypto'){
+        // sym is like "BINANCE:BTCUSDT" → match to our CRYPTO array
+        var pair=sym.replace('BINANCE:','').replace('USDT','');
+        asset=CRYPTO.find(function(c){return c.sym===pair})||wl.find(function(w){return w.sym===pair});
+      } else {
+        asset=STOCKS.find(function(s){return s.sym===sym})||ALL_STOCKS.find(function(s){return s.sym===sym})||wl.find(function(w){return w.sym===sym});
       }
-    }catch(ex){}
-  };
-  fhWs.onclose=function(){
-    console.log('Finnhub WS closed, reconnecting in 5s');
-    setTimeout(function(){if(mkt==='stocks')fhConnectWS(symbols)},5000);
-  };
+      if(!asset||!price)return;
+      var prev=prices[asset.id];
+      var prevClose=prev?prev.prevClose||prev.usd:price;
+      prices[asset.id]={usd:price,usd_24h_change:((price-prevClose)/prevClose)*100,prevClose:prevClose,high:prev?Math.max(prev.high||price,price):price,low:prev?Math.min(prev.low||price,price):price};
+      ConnGuard.lastPriceUpdate=Date.now();ConnGuard.dataQuality='fresh';
+      // Feed into candle engine
+      processTick(asset.id,price,ts);
+    });
+    // Throttle UI updates to every 2 seconds
+    var now=Date.now();
+    if(now-lastTickerUIUpdate>2000){
+      lastTickerUIUpdate=now;
+      updateTicker();updateWL();updateHdr();updateCorr();
+      // Update price displays on all chart tiles
+      Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,tileAsset[k])});
+    }
+  }catch(ex){}
 }
 
 // ===================== STOCK GEN =====================
@@ -674,35 +745,42 @@ window.tfClick=function(key,days,btn){btn.parentElement.querySelectorAll('.tf').
 // ===================== LOAD ALL =====================
 function loadAll(){
   var w=getWL();tileAsset={main:w[0].id,c2:(w[1]||w[0]).id,c3:(w[2]||w[0]).id};
-  if(mkt==='crypto'){
-    cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();
+  setStatus('warn','Loading real prices...');
+
+  // Both crypto and stocks use Finnhub for live prices
+  fhAllQuotes(w).then(function(){
+    ConnGuard.onPriceUpdate();ConnGuard.isSimulated=false;
+
+    if(mkt==='crypto'){
+      // Load OHLC charts from CoinGecko (Finnhub candles are paid)
       loadTile('main',tileAsset.main,tileDays.main);
       setTimeout(function(){loadTile('c2',tileAsset.c2,tileDays.c2)},2500);
       setTimeout(function(){loadTile('c3',tileAsset.c3,tileDays.c3)},5000);
-      // Load OHLC for ALL watchlist items (for bot analysis + market insights)
       loadAllOHLC(w,0);
-    }).catch(function(e){console.error(e);setStatus('err','API error — retrying');setTimeout(loadAll,15000);});
-  }else{
-    ConnGuard.isSimulated=false;ConnGuard.lastPriceUpdate=Date.now();ConnGuard.dataQuality='fresh';
-    setStatus('warn','Loading real stock prices...');
-    // Fetch real prices from Finnhub
-    fhAllQuotes(w).then(function(){
-      ConnGuard.onPriceUpdate();
-      // Generate chart data using real prices as base
+      // Connect crypto WebSocket
+      var cryptoSyms=w.map(function(a){return'BINANCE:'+a.sym+'USDT'});
+      fhConnectCryptoWS(cryptoSyms);
+      setStatus('ok','Finnhub + CoinGecko — Live Crypto');
+    } else {
+      // Generate chart data using real base prices
       w.forEach(function(a){var st=findA(a.id);if(st&&st.base){stkData[a.id]=genStk(st,168);}});
       loadTile('main',tileAsset.main,7);loadTile('c2',tileAsset.c2,7);loadTile('c3',tileAsset.c3,7);
-      updateUI();updateInd();
+      // Connect stock WebSocket
+      var stockSyms=w.map(function(a){return a.sym});
+      fhConnectStockWS(stockSyms);
       setStatus('ok','Finnhub — Real Stock Prices');
-      // Connect WebSocket for real-time updates
-      var syms=w.map(function(a){return a.sym});
-      fhConnectWS(syms);
-      // Periodic price refresh via REST (every 30s as backup)
-      if(window._fhInterval)clearInterval(window._fhInterval);
-      window._fhInterval=setInterval(function(){
-        fhAllQuotes(getWL()).then(function(){updateTicker();updateWL();updatePulse();updateHdr();updateCorr()});
-      },30000);
-    });
-  }
+    }
+    updateUI();updateInd();
+
+    // Periodic REST backup refresh (every 30s)
+    if(window._fhInterval)clearInterval(window._fhInterval);
+    window._fhInterval=setInterval(function(){
+      fhAllQuotes(getWL()).then(function(){updateTicker();updateWL();updatePulse();updateHdr();updateCorr()});
+    },30000);
+  }).catch(function(e){
+    console.error(e);setStatus('err','API error — retrying');
+    setTimeout(loadAll,10000);
+  });
 }
 
 // Load OHLC data for all watchlist items sequentially (for bot + analysis)
@@ -1390,7 +1468,18 @@ function showSR(res){var el=document.getElementById('search-drop');if(!res.lengt
 
 window.addWL=function(id,sym,name){if(wl.some(function(w){return w.id===id})||getAssets().some(function(a){return a.id===id}))return;
   wl.push({id:id,sym:sym,name:name,mkt:mkt});try{localStorage.setItem('tb_wl',JSON.stringify(wl))}catch(e){}
-  if(mkt==='crypto'){qApi('https://api.coingecko.com/api/v3/simple/price?ids='+id+'&vs_currencies=usd&include_24hr_change=true').then(function(d){if(d[id])prices[id]=d[id];updateWL()}).catch(function(){updateWL()});}
+  if(mkt==='crypto'){
+    var csym='BINANCE:'+sym+'USDT';
+    fhQuote(csym,FH_CRYPTO_KEY).then(function(q){
+      if(q&&q.c){prices[id]={usd:q.c,usd_24h_change:q.dp||0,prevClose:q.pc};}
+      updateWL();
+      // Subscribe to crypto WebSocket
+      if(fhCryptoWs&&fhCryptoWs.readyState===1)fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:csym}));
+    }).catch(function(){
+      // Fallback to CoinGecko
+      qApi('https://api.coingecko.com/api/v3/simple/price?ids='+id+'&vs_currencies=usd&include_24hr_change=true').then(function(d){if(d[id])prices[id]=d[id];updateWL()}).catch(function(){updateWL()});
+    });
+  }
   else{
     // Fetch real price from Finnhub
     fhQuote(sym).then(function(q){
@@ -1450,9 +1539,10 @@ window.applyTextSize=function(size){
 };
 
 window.switchMkt=function(m,btn){mkt=m;sel=getAssets()[0].id;tileDays={main:7,c2:7,c3:7};
-  ConnGuard.isSimulated=false; // Finnhub gives real data now
-  if(m==='stocks'&&window._fhInterval)clearInterval(window._fhInterval);
-  if(m==='crypto'&&fhWs){try{fhWs.close()}catch(e){}};
+  if(window._fhInterval)clearInterval(window._fhInterval);
+  // Close WebSockets for the market we're leaving
+  if(m==='crypto'&&fhStockWs){try{fhStockWs.close()}catch(e){}}
+  if(m==='stocks'&&fhCryptoWs){try{fhCryptoWs.close()}catch(e){}}
   btn.parentElement.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});btn.classList.add('on');
   loadAll();};
 
