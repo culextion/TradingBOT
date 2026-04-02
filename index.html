@@ -14,7 +14,7 @@
 :root{--s0:#0d1117;--s1:#161b22;--s2:#1c2333;--s3:#242d3d;--bd:#30363d;--t1:#e6edf3;--t2:#8b949e;--blu:#58a6ff;--grn:#3fb950;--red:#f85149;--ylw:#d29922;--pur:#bc8cff;--hover-bd:#444c56}
 :root.light{--s0:#ffffff;--s1:#f6f8fa;--s2:#eef1f5;--s3:#e1e5ea;--bd:#d0d7de;--t1:#1f2328;--t2:#656d76;--blu:#0969da;--grn:#1a7f37;--red:#cf222e;--ylw:#9a6700;--pur:#8250df;--hover-bd:#afb8c1}
 *{box-sizing:border-box}
-:root{--fs-xs:clamp(9px,1.2vw,11px);--fs-sm:clamp(10px,1.4vw,12px);--fs-base:clamp(11px,1.6vw,13px);--fs-md:clamp(12px,1.8vw,14px);--fs-lg:clamp(14px,2.2vw,18px);--fs-xl:clamp(16px,2.8vw,22px);--fs-2xl:clamp(20px,3.5vw,28px)}
+:root{--fs-xs:clamp(10px,1.2vw,12px);--fs-sm:clamp(11px,1.4vw,13px);--fs-base:clamp(12px,1.6vw,14px);--fs-md:clamp(13px,1.8vw,15px);--fs-lg:clamp(14px,2.2vw,18px);--fs-xl:clamp(16px,2.8vw,22px);--fs-2xl:clamp(20px,3.5vw,28px);--fs-min:10px}
 body.theme-shift,body.theme-shift *,body.theme-shift *::before,body.theme-shift *::after{transition:background-color .35s ease,color .35s ease,border-color .35s ease,fill .35s ease,stroke .35s ease !important}
 body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
@@ -149,6 +149,13 @@ select.inp{appearance:auto}
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:9px">Trading Mode</label>
+        <select id="trade-mode" class="inp" style="font-size:11px">
+          <option value="paper" selected>Paper Trading (Simulation)</option>
+          <option value="live" disabled>Live Trading (Connect account in Settings)</option>
+        </select>
+      </div>
       <div class="flex gap-2">
         <button id="btn-start" class="btn btn-g flex-1" onclick="startBot()">Start Bot</button>
         <button id="btn-stop" class="btn btn-r flex-1" onclick="stopBot()" style="display:none">Stop Bot</button>
@@ -730,6 +737,7 @@ function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,ti
   var pnl=pv-account.start;var pe=document.getElementById('h-pnl');if(pe){pe.textContent=(pnl>=0?'+':'')+('$'+fp(Math.abs(pnl)));pe.className=(pnl>=0?'text-grn':'text-red')+' font-bold';}
   var ppe=document.getElementById('pf-pnl');if(ppe){ppe.textContent=(pnl>=0?'+':'')+('$'+fp(Math.abs(pnl)));ppe.className=(pnl>=0?'text-grn':'text-red')+' font-bold text-lg';}
   setText('h-pos',account.positions.length+'');setText('pf-fees','$'+fp(account.fees));
+  setText('pf-cash','$'+fp(account.cash));
   var m=RiskEngine.calcMetrics(account.trades,account.start);setText('pf-wr',m&&m.totalTrades>0?(m.winRate*100).toFixed(0)+'%':'--');}
 
 function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
@@ -1077,11 +1085,11 @@ function renderAllocation(){
   slices.forEach(function(s){var pct=s.value/total;if(pct<0.001)return;var dash=pct*circ;
     svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.color+'" stroke-width="'+sw+'" stroke-dasharray="'+dash.toFixed(2)+' '+(circ-dash).toFixed(2)+'" stroke-dashoffset="'+(-offset).toFixed(2)+'" style="transition:stroke-dashoffset .3s"/>';
     offset+=dash;});
-  svg+='<text x="'+cx+'" y="'+(cy-4)+'" text-anchor="middle" fill="var(--t1)" font-size="11" font-weight="700">$'+fp(total)+'</text>';
-  svg+='<text x="'+cx+'" y="'+(cy+8)+'" text-anchor="middle" fill="var(--t2)" font-size="7">TOTAL</text>';
+  svg+='<text x="'+cx+'" y="'+(cy-5)+'" text-anchor="middle" fill="var(--t1)" font-size="14" font-weight="700">$'+fp(total)+'</text>';
+  svg+='<text x="'+cx+'" y="'+(cy+9)+'" text-anchor="middle" fill="var(--t2)" font-size="9" font-weight="600">TOTAL</text>';
   // Legend
   var ly=8;slices.forEach(function(s){var pct=(s.value/total*100).toFixed(1);if(pct<0.1)return;
-    svg+='<circle cx="135" cy="'+ly+'" r="3" fill="'+s.color+'"/><text x="142" y="'+(ly+3)+'" fill="var(--t1)" font-size="7" font-weight="600">'+s.name+'</text><text x="186" y="'+(ly+3)+'" fill="var(--t2)" font-size="7" text-anchor="end">'+pct+'%</text>';ly+=14;});
+    svg+='<circle cx="135" cy="'+(ly+1)+'" r="4" fill="'+s.color+'"/><text x="143" y="'+(ly+5)+'" fill="var(--t1)" font-size="10" font-weight="600">'+s.name+'</text><text x="196" y="'+(ly+5)+'" fill="var(--t2)" font-size="10" text-anchor="end">'+pct+'%</text>';ly+=16;});
   svg+='</svg>';el.innerHTML=svg;
 }
 
@@ -1195,12 +1203,23 @@ window.applyPreset=function(p){
     yolo:{size:50,sl:15,tp:40,max:10,dll:50000,trail:8},
   };
   var s=presets[p];if(!s)return;
+  // Warning for risky presets
+  var warnings={
+    moderate:'Moderate risk: The bot will invest 15% of your portfolio per trade. This increases both potential gains and losses.',
+    aggressive:'Aggressive risk: The bot will invest 25% per trade with wider stop losses. You could lose significant capital quickly in volatile markets.',
+    yolo:'MAXIMUM RISK: The bot will invest 50% per trade! This is extremely dangerous and you could lose most of your portfolio in just a few bad trades. Are you absolutely sure?',
+  };
+  if(warnings[p]&&!confirm('⚠️ '+warnings[p]+'\n\nContinue with '+p+' preset?'))return;
   document.getElementById('r-size').value=s.size;
   document.getElementById('r-sl').value=s.sl;
   document.getElementById('r-tp').value=s.tp;
   document.getElementById('r-max').value=s.max;
   document.getElementById('r-dll').value=s.dll;
   document.getElementById('r-trail').value=s.trail;
+  // Update button highlights
+  document.querySelectorAll('[onclick^="applyPreset"]').forEach(function(b){b.style.border='none';b.style.color='var(--t2)';});
+  var clicked=document.querySelector('[onclick="applyPreset(\''+p+'\')"]');
+  if(clicked){clicked.style.border='1px solid var(--blu)';clicked.style.color='var(--t1)';}
   blog('Risk preset applied: '+p+' ('+s.size+'% per trade, '+s.sl+'% stop loss)');
 };
 
