@@ -1535,7 +1535,9 @@ function prOf(id){var p=prices[id];return p?p.usd:0}
 function chOf(id){var p=prices[id];return p?(p.usd_24h_change||0):0}
 function fp(p){if(!p)return'0.00';if(p>=1e9)return(p/1e9).toFixed(2)+'B';if(p>=1e6)return(p/1e6).toFixed(2)+'M';if(p>=1000)return p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return p.toFixed(2);return p.toFixed(4)}
 function setText(id,t){var el=document.getElementById(id);if(el)el.textContent=t}
-function setPr(eid,aid){var el=document.getElementById(eid);if(!el)return;var p=prOf(aid),c=chOf(aid);el.textContent='$'+fp(p);el.className=(c>=0?'text-grn':'text-red')+' font-bold text-xs'}
+function setPr(eid,aid){var el=document.getElementById(eid);if(!el)return;var p=prOf(aid),c=chOf(aid);
+  el.innerHTML='<span>$'+fp(p)+'</span> <span style="font-size:var(--fs-xs);opacity:.8">'+(c>=0?'▲':'▼')+Math.abs(c).toFixed(2)+'%</span>';
+  el.className=(c>=0?'text-grn':'text-red')+' font-bold text-xs'}
 function gv(id){var el=document.getElementById(id);return el?el.value:''}
 function mr(l,v){return'<div class="metric"><span class="text-t2">'+l+'</span><span class="font-bold">'+v+'</span></div>'}
 function cRSI(d){var p=14,g=[],lo=[];for(var i=1;i<d.length;i++){var c=d[i].close-d[i-1].close;g.push(c>0?c:0);lo.push(c<0?-c:0)}if(g.length<p)return 50;var ag=0,al=0;for(var i=g.length-p;i<g.length;i++){ag+=g[i];al+=lo[i]}ag/=p;al/=p;return 100-100/(1+(al===0?100:ag/al))}
