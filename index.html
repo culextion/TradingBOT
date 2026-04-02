@@ -641,7 +641,7 @@ function fhConnectStockWS(symbols){
     console.log('Stock WS connected:',symbols.length,'symbols');
   };
   fhStockWs.onmessage=function(e){handleFhMessage(e.data,'stock')};
-  fhStockWs.onclose=function(){setTimeout(function(){if(mkt==='stocks')fhConnectStockWS(symbols)},5000)};
+  fhStockWs.onclose=function(){console.log('Stock WS closed, reconnecting...');setTimeout(function(){fhConnectStockWS(symbols)},3000)};
 }
 
 function fhConnectCryptoWS(symbols){
@@ -652,7 +652,7 @@ function fhConnectCryptoWS(symbols){
     console.log('Crypto WS connected:',symbols.length,'symbols');
   };
   fhCryptoWs.onmessage=function(e){handleFhMessage(e.data,'crypto')};
-  fhCryptoWs.onclose=function(){setTimeout(function(){if(mkt==='crypto')fhConnectCryptoWS(symbols)},5000)};
+  fhCryptoWs.onclose=function(){console.log('Crypto WS closed, reconnecting...');setTimeout(function(){fhConnectCryptoWS(symbols)},3000)};
 }
 
 function handleFhMessage(data,type){
@@ -791,11 +791,14 @@ function loadAll(){
     }
     updateUI();updateInd();
 
-    // Periodic REST backup refresh (every 30s)
+    // Periodic REST backup refresh (every 20s) — keeps prices fresh even if WebSocket drops
     if(window._fhInterval)clearInterval(window._fhInterval);
     window._fhInterval=setInterval(function(){
-      fhAllQuotes(getWL()).then(function(){updateTicker();updateWL();updatePulse();updateHdr();updateCorr()});
-    },30000);
+      fhAllQuotes(getWL()).then(function(){
+        ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
+        updateTicker();updateWL();updatePulse();updateHdr();updateCorr();
+      }).catch(function(){});
+    },20000);
   }).catch(function(e){
     console.error(e);setStatus('err','API error — retrying');
     setTimeout(loadAll,10000);
@@ -1346,7 +1349,16 @@ function updateBotPerf(){
 }
 
 function runBot(){if(!bot.on)return;
-  var cs=ConnGuard.canTradeSafely();if(!cs.safe){blog('PAUSED: '+cs.reason);return;}
+  // If data seems stale, try a quick refresh before giving up
+  var cs=ConnGuard.canTradeSafely();
+  if(!cs.safe){
+    // Attempt a price refresh instead of just pausing
+    fhAllQuotes(getWL()).then(function(){
+      ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
+    }).catch(function(){});
+    // Only block if data is REALLY old (>10 minutes)
+    if(ConnGuard.staleSec>600){blog('PAUSED: '+cs.reason);return;}
+  }
   if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
 
   // Stop/trail check
@@ -1664,8 +1676,41 @@ window.toggleTheme=function(){
 })();
 
 // ===================== INIT =====================
+// ===================== STATE PERSISTENCE =====================
+function saveState(){
+  try{
+    localStorage.setItem('ct_account',JSON.stringify({cash:account.cash,start:account.start,positions:account.positions,trades:account.trades.slice(0,50),dayPnL:account.dayPnL,fees:account.fees}));
+    localStorage.setItem('ct_bot',JSON.stringify({strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20)}));
+    localStorage.setItem('ct_mkt',mkt);
+    localStorage.setItem('ct_rsize',gv('r-size'));localStorage.setItem('ct_rsl',gv('r-sl'));
+    localStorage.setItem('ct_rtp',gv('r-tp'));localStorage.setItem('ct_rmax',gv('r-max'));
+    localStorage.setItem('ct_rdll',gv('r-dll'));localStorage.setItem('ct_rtrail',gv('r-trail'));
+    localStorage.setItem('ct_strat',gv('strat-sel'));localStorage.setItem('ct_fee',gv('fee-sel'));
+  }catch(e){}
+}
+function loadState(){
+  try{
+    var sa=localStorage.getItem('ct_account');
+    if(sa){var a=JSON.parse(sa);account.cash=a.cash;account.start=a.start;account.positions=a.positions||[];account.trades=a.trades||[];account.dayPnL=a.dayPnL||0;account.fees=a.fees||0;}
+    var sb=localStorage.getItem('ct_bot');
+    if(sb){var b=JSON.parse(sb);bot.strat=b.strat;bot.pnl=b.pnl||0;bot.trades=b.trades||0;bot.logs=b.logs||[];}
+    var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
+    var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
+    var sf=localStorage.getItem('ct_fee');if(sf){var el=document.getElementById('fee-sel');if(el)el.value=sf;}
+    // Risk controls
+    var rv=function(k,id){var v=localStorage.getItem(k);if(v){var el=document.getElementById(id);if(el)el.value=v;}};
+    rv('ct_rsize','r-size');rv('ct_rsl','r-sl');rv('ct_rtp','r-tp');rv('ct_rmax','r-max');rv('ct_rdll','r-dll');rv('ct_rtrail','r-trail');
+  }catch(e){}
+}
+// Auto-save every 10 seconds
+setInterval(saveState,10000);
+// Save on page unload
+window.addEventListener('beforeunload',saveState);
+
+// ===================== INIT =====================
 ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
+loadState(); // Restore account, positions, trades, bot settings
 setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);
 onStratChange();
 initTicker();
