@@ -633,27 +633,39 @@ function processTick(assetId,price,timestamp){
 }
 
 // ---- WEBSOCKET CONNECTIONS ----
+var _lastStockSyms=[],_lastCryptoSyms=[];
+
 function fhConnectStockWS(symbols){
+  _lastStockSyms=symbols;
   if(fhStockWs){try{fhStockWs.close()}catch(e){}}
   fhStockWs=new WebSocket('wss://ws.finnhub.io?token='+FH_STOCK_KEY);
   fhStockWs.onopen=function(){
     symbols.forEach(function(sym){fhStockWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
+    ConnGuard.wsStockAlive=true;ConnGuard.wsLastStockPing=Date.now();
     console.log('Stock WS connected:',symbols.length,'symbols');
   };
-  fhStockWs.onmessage=function(e){handleFhMessage(e.data,'stock')};
-  fhStockWs.onclose=function(){console.log('Stock WS closed, reconnecting...');setTimeout(function(){fhConnectStockWS(symbols)},3000)};
+  fhStockWs.onmessage=function(e){ConnGuard.onWSMessage('stock');handleFhMessage(e.data,'stock')};
+  fhStockWs.onerror=function(){ConnGuard.wsStockAlive=false};
+  fhStockWs.onclose=function(){ConnGuard.wsStockAlive=false;console.log('Stock WS closed, reconnecting in 2s...');setTimeout(function(){fhConnectStockWS(_lastStockSyms)},2000)};
 }
 
 function fhConnectCryptoWS(symbols){
+  _lastCryptoSyms=symbols;
   if(fhCryptoWs){try{fhCryptoWs.close()}catch(e){}}
   fhCryptoWs=new WebSocket('wss://ws.finnhub.io?token='+FH_CRYPTO_KEY);
   fhCryptoWs.onopen=function(){
     symbols.forEach(function(sym){fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
+    ConnGuard.wsCryptoAlive=true;ConnGuard.wsLastCryptoPing=Date.now();
     console.log('Crypto WS connected:',symbols.length,'symbols');
   };
-  fhCryptoWs.onmessage=function(e){handleFhMessage(e.data,'crypto')};
-  fhCryptoWs.onclose=function(){console.log('Crypto WS closed, reconnecting...');setTimeout(function(){fhConnectCryptoWS(symbols)},3000)};
+  fhCryptoWs.onmessage=function(e){ConnGuard.onWSMessage('crypto');handleFhMessage(e.data,'crypto')};
+  fhCryptoWs.onerror=function(){ConnGuard.wsCryptoAlive=false};
+  fhCryptoWs.onclose=function(){ConnGuard.wsCryptoAlive=false;console.log('Crypto WS closed, reconnecting in 2s...');setTimeout(function(){fhConnectCryptoWS(_lastCryptoSyms)},2000)};
 }
+
+// Global reconnect functions called by ConnGuard health monitor
+window.fhReconnectStock=function(){if(_lastStockSyms.length)fhConnectStockWS(_lastStockSyms)};
+window.fhReconnectCrypto=function(){if(_lastCryptoSyms.length)fhConnectCryptoWS(_lastCryptoSyms)};
 
 function handleFhMessage(data,type){
   try{
@@ -791,14 +803,14 @@ function loadAll(){
     }
     updateUI();updateInd();
 
-    // Periodic REST backup refresh (every 20s) — keeps prices fresh even if WebSocket drops
+    // REST price refresh every 15 seconds — keeps data fresh even if WebSocket drops
     if(window._fhInterval)clearInterval(window._fhInterval);
     window._fhInterval=setInterval(function(){
       fhAllQuotes(getWL()).then(function(){
-        ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
+        ConnGuard.onPriceUpdate();
         updateTicker();updateWL();updatePulse();updateHdr();updateCorr();
-      }).catch(function(){});
-    },20000);
+      }).catch(function(){ConnGuard.onAPIFailure()});
+    },15000);
   }).catch(function(e){
     console.error(e);setStatus('err','API error — retrying');
     setTimeout(loadAll,10000);
@@ -1148,7 +1160,7 @@ window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';
   setText('bot-status','RUNNING');document.getElementById('bot-status').className='font-bold text-xs text-grn';
   document.getElementById('mode-badge').textContent='BOT ON';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-grn border-grn pulse cursor-pointer';
   blog('Bot started — strategy: '+(STRATS[bot.strat]||{name:bot.strat}).name);
-  runBot();bot.iv=setInterval(runBot,15000);};
+  runBot();bot.iv=setInterval(runBot,10000);};
 
 window.stopBot=function(){bot.on=false;clearInterval(bot.iv);
   document.getElementById('btn-start').style.display='';document.getElementById('btn-stop').style.display='none';
@@ -1357,7 +1369,7 @@ function runBot(){if(!bot.on)return;
       ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
     }).catch(function(){});
     // Only block if data is REALLY old (>10 minutes)
-    if(ConnGuard.staleSec>600){blog('PAUSED: '+cs.reason);return;}
+    if(ConnGuard.staleSec>180){blog('PAUSED: '+cs.reason+' — attempting refresh');return;}
   }
   if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
 
