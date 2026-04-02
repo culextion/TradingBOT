@@ -4,9 +4,10 @@ var ConnGuard = {
   lastPriceUpdate: 0,
   lastAPISuccess: 0,
   consecutiveFailures: 0,
-  maxStaleSeconds: 120,      // 2 minutes = stale
-  maxFailuresBeforeHalt: 5,
+  maxStaleSeconds: 300,      // 5 minutes = stale (was 2min, too aggressive)
+  maxFailuresBeforeHalt: 10,
   isOnline: navigator.onLine,
+  isSimulated: false,        // true for stock mode (no API needed)
   listeners: [],
 
   init: function() {
@@ -43,6 +44,8 @@ var ConnGuard = {
   },
 
   healthCheck: function() {
+    // Simulated data (stocks) is always fresh
+    if (this.isSimulated) { this.dataQuality = 'fresh'; this.staleSec = 0; return; }
     var now = Date.now();
     var staleSec = (now - this.lastPriceUpdate) / 1000;
     var quality = 'fresh';
@@ -56,6 +59,8 @@ var ConnGuard = {
   },
 
   canTradeSafely: function() {
+    // Simulated mode always safe
+    if (this.isSimulated) return { safe: true };
     if (!this.isOnline) return { safe: false, reason: 'Browser is offline' };
     if (this.dataQuality === 'critical' || this.dataQuality === 'stale') return { safe: false, reason: 'Price data is stale (' + this.staleSec + 's old)' };
     if (this.consecutiveFailures >= 3) return { safe: false, reason: 'API unstable (' + this.consecutiveFailures + ' failures)' };

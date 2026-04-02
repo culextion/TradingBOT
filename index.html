@@ -14,6 +14,7 @@
 :root{--s0:#0d1117;--s1:#161b22;--s2:#1c2333;--s3:#242d3d;--bd:#30363d;--t1:#e6edf3;--t2:#8b949e;--blu:#58a6ff;--grn:#3fb950;--red:#f85149;--ylw:#d29922;--pur:#bc8cff;--hover-bd:#444c56}
 :root.light{--s0:#ffffff;--s1:#f6f8fa;--s2:#eef1f5;--s3:#e1e5ea;--bd:#d0d7de;--t1:#1f2328;--t2:#656d76;--blu:#0969da;--grn:#1a7f37;--red:#cf222e;--ylw:#9a6700;--pur:#8250df;--hover-bd:#afb8c1}
 *{box-sizing:border-box}
+:root{--fs-xs:clamp(9px,1.2vw,11px);--fs-sm:clamp(10px,1.4vw,12px);--fs-base:clamp(11px,1.6vw,13px);--fs-md:clamp(12px,1.8vw,14px);--fs-lg:clamp(14px,2.2vw,18px);--fs-xl:clamp(16px,2.8vw,22px);--fs-2xl:clamp(20px,3.5vw,28px)}
 body.theme-shift,body.theme-shift *,body.theme-shift *::before,body.theme-shift *::after{transition:background-color .35s ease,color .35s ease,border-color .35s ease,fill .35s ease,stroke .35s ease !important}
 body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
@@ -82,6 +83,7 @@ select.inp{appearance:auto}
     <button class="nav-tab on" onclick="showPage('dashboard',this)">Dashboard</button>
     <button class="nav-tab" onclick="showPage('bot',this)">Trading Bot</button>
     <button class="nav-tab" onclick="showPage('analysis',this)">Market Analysis</button>
+    <button class="nav-tab" onclick="showPage('settings',this)">Settings</button>
   </div>
 </div>
 <div class="flex items-center gap-5 text-xs">
@@ -304,6 +306,157 @@ select.inp{appearance:auto}
 </div>
 </div>
 
+<!-- PAGE: SETTINGS -->
+<div id="page-settings" class="h-full overflow-y-auto p-4" style="display:none">
+<div class="max-w-4xl mx-auto grid grid-cols-2 gap-4">
+
+  <!-- Account & Profile -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Account</span></div>
+    <div class="pb p-4">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-t2" style="font-size:var(--fs-xs)">Signed in as</div>
+          <div id="set-user-email" class="font-bold" style="font-size:var(--fs-md)">Not signed in</div>
+        </div>
+        <div class="flex gap-2">
+          <button id="set-signin-btn" class="btn btn-b" onclick="document.getElementById('auth-overlay').style.display='flex'">Sign In</button>
+          <button id="set-signout-btn" class="btn btn-r" onclick="SB.signOut()" style="display:none">Sign Out</button>
+        </div>
+      </div>
+      <p class="text-t2" style="font-size:var(--fs-sm)">Sign in to sync your watchlist, bot settings, trade history, and linked accounts across all your devices.</p>
+    </div>
+  </div>
+
+  <!-- Connected Accounts -->
+  <div class="panel">
+    <div class="ph"><span>Linked Trading Accounts</span></div>
+    <div class="pb p-4 space-y-3">
+      <p class="text-t2" style="font-size:var(--fs-sm)">Connect your brokerage accounts for automated trading. Paper trading mode is used until accounts are linked.</p>
+
+      <div class="bg-s2 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2"><span class="font-bold" style="font-size:var(--fs-md)">Coinbase</span><span class="text-t2" style="font-size:var(--fs-xs)">Crypto</span></div>
+          <span class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
+        </div>
+        <p class="text-t2 mb-2" style="font-size:var(--fs-xs)">OAuth connection — securely links your Coinbase account for automated crypto trading.</p>
+        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" disabled title="Coming soon">Connect Coinbase</button>
+      </div>
+
+      <div class="bg-s2 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2"><span class="font-bold" style="font-size:var(--fs-md)">Alpaca</span><span class="text-t2" style="font-size:var(--fs-xs)">Stocks</span></div>
+          <span class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
+        </div>
+        <p class="text-t2 mb-2" style="font-size:var(--fs-xs)">Commission-free stock trading via API. Supports paper trading mode for testing.</p>
+        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" disabled title="Coming soon">Connect Alpaca</button>
+      </div>
+
+      <div class="bg-s2 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2"><span class="font-bold" style="font-size:var(--fs-md)">Robinhood</span><span class="text-t2" style="font-size:var(--fs-xs)">Stocks & Crypto</span></div>
+          <span class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
+        </div>
+        <p class="text-t2 mb-2" style="font-size:var(--fs-xs)">Commission-free trading. Crypto API available, stocks via unofficial API.</p>
+        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" disabled title="Coming soon">Connect Robinhood</button>
+      </div>
+
+      <div class="bg-s2 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2"><span class="font-bold" style="font-size:var(--fs-md)">Schwab / E*TRADE</span><span class="text-t2" style="font-size:var(--fs-xs)">Stocks & Options</span></div>
+          <span class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
+        </div>
+        <p class="text-t2 mb-2" style="font-size:var(--fs-xs)">Full stock & options trading via Schwab API (successor to TD Ameritrade).</p>
+        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" disabled title="Coming soon">Connect Schwab</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Display Preferences -->
+  <div class="panel">
+    <div class="ph"><span>Display & Preferences</span></div>
+    <div class="pb p-4 space-y-3">
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:var(--fs-sm)">Theme</label>
+        <select class="inp" onchange="if(typeof toggleTheme==='function')toggleTheme()">
+          <option value="dark" selected>Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:var(--fs-sm)">Default Market</label>
+        <select class="inp" id="set-default-mkt" onchange="switchMkt(this.value,document.querySelector('.nav-tab[onclick*=dashboard]'))">
+          <option value="crypto">Crypto</option>
+          <option value="stocks">Stocks</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:var(--fs-sm)">Text Size</label>
+        <select class="inp" id="set-text-size" onchange="applyTextSize(this.value)">
+          <option value="compact">Compact</option>
+          <option value="normal" selected>Normal</option>
+          <option value="large">Large</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:var(--fs-sm)">Price Refresh Rate</label>
+        <select class="inp" id="set-refresh-rate">
+          <option value="30">30 seconds</option>
+          <option value="60" selected>60 seconds</option>
+          <option value="120">2 minutes</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:var(--fs-sm)">Chart Style</label>
+        <select class="inp" id="set-chart-style">
+          <option value="candle" selected>Candlestick</option>
+          <option value="line">Line</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paper Trading Account -->
+  <div class="panel">
+    <div class="ph"><span>Paper Trading Account</span></div>
+    <div class="pb p-4 space-y-3">
+      <div class="bg-s2 rounded-lg p-3">
+        <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Starting Balance</span><span class="font-bold" style="font-size:var(--fs-md)">$100,000.00</span></div>
+        <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Current Balance</span><span id="set-cur-bal" class="font-bold text-grn" style="font-size:var(--fs-md)">$100,000.00</span></div>
+        <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Total Fees Paid</span><span id="set-fees" class="text-ylw font-bold" style="font-size:var(--fs-md)">$0.00</span></div>
+        <div class="flex justify-between"><span class="text-t2" style="font-size:var(--fs-sm)">Total Trades</span><span id="set-trades" class="font-bold" style="font-size:var(--fs-md)">0</span></div>
+      </div>
+      <button class="btn btn-r w-full" onclick="if(confirm('Reset paper account to $100,000? All positions and trades will be cleared.')){account.cash=100000;account.start=100000;account.positions=[];account.trades=[];account.fees=0;account.dayPnL=0;bot.pnl=0;bot.trades=0;updateHdr();updatePos();updateTradeLog();updateUI();alert('Account reset!')}">Reset Paper Account</button>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div class="panel">
+    <div class="ph"><span>Notifications & Alerts</span></div>
+    <div class="pb p-4 space-y-3">
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Price Alerts</span><input type="checkbox" checked class="accent-blu"></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Bot Trade Notifications</span><input type="checkbox" checked class="accent-blu"></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Signal Alerts</span><input type="checkbox" checked class="accent-blu"></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Stop Loss Triggered</span><input type="checkbox" checked class="accent-blu"></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Daily Summary</span><input type="checkbox" class="accent-blu"></div>
+    </div>
+  </div>
+
+  <!-- Data & Privacy -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Data & Privacy</span></div>
+    <div class="pb p-4">
+      <div class="flex gap-3">
+        <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="localStorage.clear();alert('Local cache cleared. Reload the page.')">Clear Local Cache</button>
+        <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="var d=JSON.stringify(account.trades,null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='culextrade-trades.json';a.click()">Export Trade History</button>
+      </div>
+      <p class="text-t2 mt-2" style="font-size:var(--fs-xs)">Your API keys are never stored in the browser. When exchange connections are enabled, credentials are encrypted and stored server-side via Supabase.</p>
+    </div>
+  </div>
+
+</div>
+</div>
+
 </div><!-- end pages -->
 
 <!-- STATUS -->
@@ -450,7 +603,8 @@ function loadAll(){
       loadAllOHLC(w,0);
     }).catch(function(e){console.error(e);setStatus('err','API error — retrying');setTimeout(loadAll,15000);});
   }else{
-    w.forEach(function(a){var st=findA(a.id);if(st&&st.base&&!stkData[a.id]){stkData[a.id]=genStk(st,168);var d=stkData[a.id];prices[a.id]={usd:d[d.length-1].close,usd_24h_change:((d[d.length-1].close-d[0].open)/d[0].open)*100}}});
+    ConnGuard.isSimulated=true;ConnGuard.lastPriceUpdate=Date.now();ConnGuard.dataQuality='fresh';
+    w.forEach(function(a){var st=findA(a.id);if(st&&st.base){stkData[a.id]=genStk(st,168);var d=stkData[a.id];prices[a.id]={usd:d[d.length-1].close,usd_24h_change:((d[d.length-1].close-d[0].open)/d[0].open)*100}}});
     loadTile('main',tileAsset.main,7);loadTile('c2',tileAsset.c2,7);loadTile('c3',tileAsset.c3,7);
     updateUI();updateInd();setStatus('ok','Stocks — Simulated');
   }
@@ -614,9 +768,9 @@ function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)r
   el.innerHTML=moves.map(function(m){
     var cc=m.conf>70?'grn':'ylw';
     return'<div class="sig '+(m.dir==='buy'?'bull':'bear')+'" style="padding:5px 8px;margin-bottom:3px">'+
-      '<div class="flex justify-between items-center"><span><span class="font-bold text-t1">'+m.sym+'</span> <span class="font-bold '+(m.dir==='buy'?'text-grn':'text-red')+'">'+m.dir.toUpperCase()+'</span></span><span class="font-bold text-'+cc+'" style="font-size:10px">'+m.conf+'%</span></div>'+
+      '<div class="flex justify-between items-center"><span><span class="font-bold text-t1">'+m.sym+'</span> <span class="font-bold '+(m.dir==='buy'?'text-grn':'text-red')+'">'+m.dir.toUpperCase()+'</span></span><span class="font-bold text-'+cc+'" style="font-size:10px">'+Math.round(m.conf)+'%</span></div>'+
       '<div class="text-t2" style="font-size:10px;margin:2px 0">'+m.reason+' <span class="text-pur">('+m.strat+')</span></div>'+
-      '<div class="bg-s3 rounded-full" style="height:3px"><div class="rounded-full bg-'+cc+'" style="height:3px;width:'+m.conf+'%;transition:width .3s"></div></div>'+
+      '<div class="bg-s3 rounded-full" style="height:3px"><div class="rounded-full bg-'+cc+'" style="height:3px;width:'+Math.round(m.conf)+'%;transition:width .3s"></div></div>'+
       '</div>';}).join('');
   if(!moves.length)el.innerHTML='<div class="text-t2 text-xs text-center py-2">No signals. Bot is monitoring...</div>';}
 
@@ -696,7 +850,7 @@ function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)re
   if(moves.length){
     html+='<div class="text-t2 text-xs font-bold uppercase mb-2">Signal Details</div>';
     moves.forEach(function(m){var cc=m.conf>70?'grn':'ylw';
-      html+='<div class="sig '+(m.dir==='buy'?'bull':'bear')+' mb-2"><div class="flex justify-between"><span class="font-bold text-t1">'+m.sym+' — '+m.dir.toUpperCase()+'</span><span class="font-bold text-'+cc+'">'+m.conf+'%</span></div><div class="text-t2" style="font-size:11px">'+m.reason+' <span class="text-pur">('+m.strat+')</span></div><div class="bg-s3 rounded-full mt-1" style="height:3px"><div class="rounded-full bg-'+cc+'" style="height:3px;width:'+m.conf+'%"></div></div></div>';
+      html+='<div class="sig '+(m.dir==='buy'?'bull':'bear')+' mb-2"><div class="flex justify-between"><span class="font-bold text-t1">'+m.sym+' — '+m.dir.toUpperCase()+'</span><span class="font-bold text-'+cc+'">'+Math.round(m.conf)+'%</span></div><div class="text-t2" style="font-size:11px">'+m.reason+' <span class="text-pur">('+m.strat+')</span></div><div class="bg-s3 rounded-full mt-1" style="height:3px"><div class="rounded-full bg-'+cc+'" style="height:3px;width:'+Math.round(m.conf)+'%"></div></div></div>';
     });
   } else {html+='<div class="text-t2 text-center py-4">No strong signals detected. Market is consolidating.</div>';}
 
@@ -964,10 +1118,10 @@ function runBot(){if(!bot.on)return;
     var buys={};moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;}});
     for(var id in buys){if(buys[id]>=2&&!account.positions.find(function(p){return p.id===id})){
       var m=moves.find(function(x){return x.id===id&&x.dir==='buy'});
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt,m.reason+' (conf: '+m.conf+'%, strategy: '+m.strat+')');return;}}
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');return;}}
   } else {
     var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})});
-    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt,m.reason+' (conf: '+m.conf+'%, strategy: '+m.strat+')');}
+    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');}
   }
   updateNextMoves();
 }
@@ -1072,14 +1226,33 @@ function sma(d,p){var s=0;for(var i=d.length-p;i<d.length;i++)s+=d[i].close;retu
 function setStatus(s,t){var d=document.getElementById('st-dot'),x=document.getElementById('st-txt');if(d)d.className='w-2 h-2 rounded-full '+(s==='ok'?'bg-grn':s==='err'?'bg-red':'bg-ylw pulse');if(x)x.textContent=t}
 
 window.showPage=function(p,btn){
-  ['dashboard','bot','analysis'].forEach(function(id){document.getElementById('page-'+id).style.display=id===p?'':'none'});
+  ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard')setTimeout(resizeCharts,200);
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();renderAllocation();renderAssetPnL();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
-  if(p==='analysis')updateAnalysis();};
+  if(p==='analysis')updateAnalysis();
+  if(p==='settings'){
+    var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
+    var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
+    if(si)si.style.display=SB.user?'none':'';if(so)so.style.display=SB.user?'':'none';
+    setText('set-cur-bal','$'+fp(portVal()));setText('set-fees','$'+fp(account.fees));setText('set-trades',account.trades.length+'');
+  }};
+
+window.applyTextSize=function(size){
+  var scale=size==='compact'?0.85:size==='large'?1.15:1;
+  document.documentElement.style.setProperty('--fs-xs','clamp('+(8*scale)+'px,1.2vw,'+(10*scale)+'px)');
+  document.documentElement.style.setProperty('--fs-sm','clamp('+(9*scale)+'px,1.4vw,'+(11*scale)+'px)');
+  document.documentElement.style.setProperty('--fs-base','clamp('+(10*scale)+'px,1.6vw,'+(12*scale)+'px)');
+  document.documentElement.style.setProperty('--fs-md','clamp('+(11*scale)+'px,1.8vw,'+(13*scale)+'px)');
+  document.documentElement.style.setProperty('--fs-lg','clamp('+(13*scale)+'px,2.2vw,'+(17*scale)+'px)');
+  document.documentElement.style.setProperty('--fs-xl','clamp('+(15*scale)+'px,2.8vw,'+(21*scale)+'px)');
+  try{localStorage.setItem('ct_textsize',size)}catch(e){}
+};
 
 window.switchMkt=function(m,btn){mkt=m;sel=getAssets()[0].id;tileDays={main:7,c2:7,c3:7};
+  ConnGuard.isSimulated=(m==='stocks');
+  if(m==='stocks'){ConnGuard.lastPriceUpdate=Date.now();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;}
   btn.parentElement.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});btn.classList.add('on');
   loadAll();};
 
