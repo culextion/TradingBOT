@@ -142,10 +142,10 @@ select.inp{appearance:auto}
 
 <!-- PAGE: BOT -->
 <div id="page-bot" class="h-full overflow-y-auto p-3" style="display:none">
-<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto 1fr auto;height:calc(100vh - 72px)">
+<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto;height:calc(100vh - 72px)">
 
   <!-- Bot Control (left sidebar, spans all rows) -->
-  <div class="panel" style="grid-row:1/5;overflow-y:auto">
+  <div class="panel" style="grid-row:1/6;overflow-y:auto">
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
@@ -228,6 +228,45 @@ select.inp{appearance:auto}
     <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Total Fees Paid</div><div id="pf-fees" class="text-ylw font-bold" style="font-size:15px">$0.00</div></div>
     <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Win Rate</div><div id="pf-wr" class="text-blu font-bold" style="font-size:15px">--</div></div>
     <div class="bg-s1 border border-bd rounded-lg p-2 text-center"><div class="text-t2" style="font-size:9px">Available Cash</div><div id="pf-cash" class="text-t1 font-bold" style="font-size:15px">$100,000</div></div>
+  </div>
+
+  <!-- Manual Trade Panel -->
+  <div class="panel" style="grid-column:2/4">
+    <div class="ph"><span>Quick Order</span><span id="mt-status" class="text-t2" style="font-size:9px"></span></div>
+    <div class="pb" style="padding:8px 12px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
+          <select id="mt-asset" class="inp" onchange="mtUpdatePreview()" style="font-size:11px"></select>
+        </div>
+        <div style="width:90px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Current Price</label>
+          <div id="mt-price" class="font-bold text-t1" style="font-size:13px;padding:4px 0">--</div>
+        </div>
+        <div style="width:100px">
+          <div style="display:flex;gap:2px;margin-bottom:2px">
+            <button class="tf on mt-mode-btn" onclick="mtSetMode('dollar',this)" style="font-size:8px;padding:1px 4px">$ Amount</button>
+            <button class="tf mt-mode-btn" onclick="mtSetMode('qty',this)" style="font-size:8px;padding:1px 4px">Quantity</button>
+          </div>
+          <input id="mt-amount" class="inp" type="number" placeholder="1000" value="1000" oninput="mtUpdatePreview()" style="font-size:11px"/>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;width:90px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Est. Cost</label>
+          <div id="mt-estimate" class="text-t2" style="font-size:11px;font-weight:600">--</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-g" onclick="mtExecute('buy')" style="padding:6px 18px;font-size:12px;font-weight:700">BUY</button>
+          <button class="btn btn-r" onclick="mtExecute('sell')" style="padding:6px 18px;font-size:12px;font-weight:700">SELL</button>
+        </div>
+        <div style="display:flex;gap:3px;align-items:center">
+          <span class="text-t2" style="font-size:9px">Quick:</span>
+          <button class="btn" style="background:var(--s3);color:var(--t2);padding:2px 6px;font-size:9px" onclick="document.getElementById('mt-amount').value='500';mtUpdatePreview()">$500</button>
+          <button class="btn" style="background:var(--s3);color:var(--t2);padding:2px 6px;font-size:9px" onclick="document.getElementById('mt-amount').value='1000';mtUpdatePreview()">$1K</button>
+          <button class="btn" style="background:var(--s3);color:var(--t2);padding:2px 6px;font-size:9px" onclick="document.getElementById('mt-amount').value='5000';mtUpdatePreview()">$5K</button>
+          <button class="btn" style="background:var(--s3);color:var(--t2);padding:2px 6px;font-size:9px" onclick="var pct=10;document.getElementById('mt-amount').value=Math.floor(portVal()*(pct/100));mtUpdatePreview()">10%</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Allocation + Per-Asset P&L row -->
@@ -548,8 +587,25 @@ function runQ(){if(!apiQ.length){apiOn=false;return;}apiOn=true;var i=apiQ.shift
 function cgPr(){var ids=(mkt==='crypto'?getWL():[]).map(function(a){return a.id}).join(',');
   if(!ids)return Promise.resolve({});
   return qApi('https://api.coingecko.com/api/v3/simple/price?ids='+ids+'&vs_currencies=usd&include_24hr_change=true');}
-function cgOHLC(id,days){return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
-  return Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[]})}
+function cgOHLC(id,days){
+  var tf=String(days||7);
+  // Check Supabase price cache first
+  var cacheCheck=SB.user?SB.getCachedPrice(id,tf):Promise.resolve(null);
+  return cacheCheck.then(function(cached){
+    if(cached&&Array.isArray(cached)&&cached.length>0)return cached;
+    // Cache miss — fetch from CoinGecko
+    return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
+      var parsed=Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[];
+      // Save to cache
+      if(parsed.length>0&&SB.user){try{SB.setCachedPrice(id,tf,parsed)}catch(e){}}
+      return parsed;
+    });
+  }).catch(function(){
+    // Cache check failed, fall back to direct API
+    return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
+      return Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[]});
+  });
+}
 
 // ===================== FINNHUB (Real Market Data) =====================
 var FH_STOCK_KEY='d77b80hr01qp6afl07fgd77b80hr01qp6afl07g0';
@@ -694,7 +750,7 @@ function handleFhMessage(data,type){
     var now=Date.now();
     if(now-lastTickerUIUpdate>2000){
       lastTickerUIUpdate=now;
-      updateTicker();updateWL();updateHdr();updateCorr();
+      updateTicker();updateWL();updateHdr();updateCorr();if(typeof mtUpdatePreview==='function')mtUpdatePreview();
       // Update price displays on all chart tiles
       Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,tileAsset[k])});
     }
@@ -936,16 +992,24 @@ function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,ti
 
 function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
   if(!account.positions.length){el.innerHTML='<div class="text-t2 text-center py-4" style="font-size:var(--fs-sm)">No open positions</div>';return;}
+  var posIdx=0;
   el.innerHTML=account.positions.map(function(p){
     var pr=prOf(p.id),invested=p.avgPrice*p.qty,mktVal=pr?pr*p.qty:0,pnl=mktVal-invested,pct=invested?(pnl/invested)*100:0;
     var c=pnl>=0?'grn':'red';
-    return '<div style="background:var(--s2);border-radius:6px;padding:8px 10px;margin-bottom:5px;border-left:3px solid var(--'+c+');cursor:pointer" onclick="this.querySelector(\'.pos-detail\').style.display=this.querySelector(\'.pos-detail\').style.display===\'none\'?\'block\':\'none\'">'+
+    var idx=posIdx++;
+    return '<div style="background:var(--s2);border-radius:6px;padding:8px 10px;margin-bottom:5px;border-left:3px solid var(--'+c+')" onclick="var d=this.querySelector(\'.pos-detail\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\'">'+
       '<div class="flex justify-between items-center" style="font-size:var(--fs-md)">'+
-        '<div><span class="font-bold text-t1">'+p.sym+'</span> <span class="text-t2" style="font-size:var(--fs-xs)">'+p.qty.toFixed(6)+' units</span></div>'+
-        '<div class="flex items-center gap-3">'+
-          '<div class="text-right"><div class="font-bold text-'+c+'">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+'</div><div class="text-'+c+'" style="font-size:var(--fs-xs)">'+(pct>=0?'+':'')+pct.toFixed(2)+'%</div></div>'+
-          '<button class="btn btn-r" style="padding:3px 10px;font-size:var(--fs-xs)" onclick="event.stopPropagation();sellA(\''+p.id+'\',null,\'Manual sell\')">Sell</button>'+
+        '<div><span class="font-bold text-t1" style="font-size:13px">'+p.sym+'</span> <span class="text-t2" style="font-size:var(--fs-xs)">'+p.qty.toFixed(6)+' units</span></div>'+
+        '<div class="flex items-center gap-2">'+
+          '<div class="text-right"><div class="font-bold" style="font-size:12px;color:var(--t1)">$'+fp(mktVal)+'</div><div class="font-bold text-'+c+'" style="font-size:11px">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+' <span style="font-size:9px">('+(pct>=0?'+':'')+pct.toFixed(2)+'%)</span></div></div>'+
         '</div>'+
+      '</div>'+
+      '<div style="margin-top:6px;display:flex;gap:3px;align-items:center" onclick="event.stopPropagation()">'+
+        '<input id="ps-qty-'+idx+'" class="inp" type="number" placeholder="Qty" step="any" style="width:80px;font-size:10px;padding:3px 6px" value="'+p.qty.toFixed(6)+'"/>'+
+        '<button class="btn" style="background:var(--s3);color:var(--ylw);padding:3px 6px;font-size:9px" onclick="document.getElementById(\'ps-qty-'+idx+'\').value='+(p.qty*0.25).toFixed(6)+'">25%</button>'+
+        '<button class="btn" style="background:var(--s3);color:var(--ylw);padding:3px 6px;font-size:9px" onclick="document.getElementById(\'ps-qty-'+idx+'\').value='+(p.qty*0.5).toFixed(6)+'">50%</button>'+
+        '<button class="btn btn-r" style="padding:3px 8px;font-size:10px" onclick="var q=parseFloat(document.getElementById(\'ps-qty-'+idx+'\').value)||0;if(q>0)sellA(\''+p.id+'\',q,\'Partial sell — Quick Trade\')">Sell</button>'+
+        '<button class="btn btn-r" style="padding:3px 8px;font-size:10px;opacity:.7" onclick="sellA(\''+p.id+'\',null,\'Full close — Quick Trade\')" title="Sell 100%">ALL</button>'+
       '</div>'+
       '<div class="pos-detail" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--bd);font-size:var(--fs-sm)">'+
         '<div class="grid grid-cols-2 gap-x-4 gap-y-1">'+
@@ -1015,10 +1079,21 @@ function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)ret
 
 function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)return;
   var moves=analyzeMarket();
+  var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
   el.innerHTML=moves.map(function(m){
     var cc=m.conf>70?'grn':'ylw';
+    var execBtn='';
+    if(m.dir==='buy'){
+      var hasPos=account.positions.find(function(p){return p.id===m.id});
+      execBtn='<button class="btn btn-g" style="padding:2px 8px;font-size:9px;margin-left:4px;flex-shrink:0" onclick="event.stopPropagation();var t=buyA(\''+m.id+'\','+Math.floor(buyAmt)+',\'Signal exec: '+m.reason.replace(/'/g,"\\'")+'\');if(t)alert(\'Bought \'+t.qty.toFixed(4)+\' '+m.sym+'\');else alert(\'Buy failed\')">Execute</button>';
+    }else if(m.dir==='sell'){
+      var pos=account.positions.find(function(p){return p.id===m.id});
+      if(pos){
+        execBtn='<button class="btn btn-r" style="padding:2px 8px;font-size:9px;margin-left:4px;flex-shrink:0" onclick="event.stopPropagation();var t=sellA(\''+m.id+'\',null,\'Signal exec: '+m.reason.replace(/'/g,"\\'")+'\');if(t)alert(\'Sold \'+t.qty.toFixed(4)+\' '+m.sym+'\');else alert(\'Sell failed\')">Execute</button>';
+      }
+    }
     return'<div class="sig '+(m.dir==='buy'?'bull':'bear')+'" style="padding:5px 8px;margin-bottom:3px">'+
-      '<div class="flex justify-between items-center"><span><span class="font-bold text-t1">'+m.sym+'</span> <span class="font-bold '+(m.dir==='buy'?'text-grn':'text-red')+'">'+m.dir.toUpperCase()+'</span></span><span class="font-bold text-'+cc+'" style="font-size:10px">'+Math.round(m.conf)+'%</span></div>'+
+      '<div class="flex justify-between items-center"><span><span class="font-bold text-t1">'+m.sym+'</span> <span class="font-bold '+(m.dir==='buy'?'text-grn':'text-red')+'">'+m.dir.toUpperCase()+'</span></span><div class="flex items-center"><span class="font-bold text-'+cc+'" style="font-size:10px">'+Math.round(m.conf)+'%</span>'+execBtn+'</div></div>'+
       '<div class="text-t2" style="font-size:10px;margin:2px 0">'+m.reason+' <span class="text-pur">('+m.strat+')</span></div>'+
       '<div class="bg-s3 rounded-full" style="height:3px"><div class="rounded-full bg-'+cc+'" style="height:3px;width:'+Math.round(m.conf)+'%;transition:width .3s"></div></div>'+
       '</div>';}).join('');
@@ -1176,7 +1251,7 @@ window.setBotMkt=function(m,btn){
   mkt=m;sel=getAssets()[0].id;
   document.querySelectorAll('.bot-mkt-btn').forEach(function(b){b.classList.remove('on');b.classList.add('text-t2');b.classList.remove('text-t1');});
   btn.classList.add('on');btn.classList.add('text-t1');btn.classList.remove('text-t2');
-  loadAll();updateDcaTargets();blog('Switched to '+m+' market');
+  loadAll();updateDcaTargets();mtPopulate();blog('Switched to '+m+' market');
 };
 
 // DCA target checkboxes
@@ -1462,6 +1537,66 @@ window.applyPreset=function(p){
 window.onStratChange=function(){var s=gv('strat-sel');var el=document.getElementById('strat-info');if(el&&STRATS[s])el.textContent=STRATS[s].desc;
   var dca=document.getElementById('dca-settings');if(dca)dca.style.display=s==='dca'?'grid':'none';};
 
+// ===================== MANUAL TRADE PANEL =====================
+var _mtMode='dollar'; // 'dollar' or 'qty'
+window.mtSetMode=function(mode,btn){
+  _mtMode=mode;
+  document.querySelectorAll('.mt-mode-btn').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  var inp=document.getElementById('mt-amount');
+  if(inp)inp.placeholder=mode==='dollar'?'1000':'0.5';
+  mtUpdatePreview();
+};
+
+function mtPopulate(){
+  var sel=document.getElementById('mt-asset');if(!sel)return;
+  var wla=getWL();
+  sel.innerHTML=wla.map(function(a){return'<option value="'+a.id+'">'+a.sym+' — '+a.name+'</option>'}).join('');
+  mtUpdatePreview();
+}
+
+window.mtUpdatePreview=function(){
+  var assetId=gv('mt-asset');if(!assetId)return;
+  var pr=prOf(assetId);
+  var prEl=document.getElementById('mt-price');
+  if(prEl)prEl.textContent=pr?'$'+fp(pr):'--';
+  var amt=parseFloat(gv('mt-amount'))||0;
+  var estEl=document.getElementById('mt-estimate');
+  if(estEl&&pr){
+    if(_mtMode==='dollar'){
+      var qty=amt/pr;
+      estEl.innerHTML=qty.toFixed(6)+' units';
+    }else{
+      var cost=amt*pr;
+      estEl.innerHTML='$'+fp(cost);
+    }
+  }
+};
+
+window.mtExecute=function(side){
+  var assetId=gv('mt-asset');if(!assetId)return;
+  var pr=prOf(assetId);if(!pr)return;
+  var amt=parseFloat(gv('mt-amount'))||0;if(amt<=0){alert('Enter a valid amount');return;}
+  var stEl=document.getElementById('mt-status');
+
+  if(side==='buy'){
+    var dollarAmt=_mtMode==='dollar'?amt:amt*pr;
+    if(dollarAmt>account.cash){alert('Insufficient cash. Available: $'+fp(account.cash));return;}
+    var t=buyA(assetId,dollarAmt,'Manual buy — Quick Order');
+    if(t){if(stEl){stEl.textContent='Bought '+t.qty.toFixed(4)+' '+t.sym+' @ $'+fp(t.price);stEl.style.color='var(--grn)';}}
+    else{alert('Buy failed — check amount and price');}
+  }else{
+    var pos=account.positions.find(function(p){return p.id===assetId});
+    if(!pos){alert('No position in this asset to sell');return;}
+    var sellQty=_mtMode==='qty'?amt:amt/pr;
+    if(sellQty>pos.qty)sellQty=pos.qty;
+    var t=window.sellA(assetId,sellQty,'Manual sell — Quick Order');
+    if(t){if(stEl){stEl.textContent='Sold '+t.qty.toFixed(4)+' '+t.sym+' @ $'+fp(t.price);stEl.style.color='var(--red)';}}
+    else{alert('Sell failed — check position');}
+  }
+  mtUpdatePreview();
+};
+
 // ===================== SIMULATOR =====================
 window.runSim=function(){var el=document.getElementById('sim-out');if(!el)return;
   el.innerHTML='<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-bd border-t-blu rounded-full spin"></div><span class="text-t2 text-xs">Running backtest...</span></div>';
@@ -1595,7 +1730,7 @@ window.showPage=function(p,btn){
   ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard')setTimeout(resizeCharts,200);
-  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();renderAllocation();renderAssetPnL();
+  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
   if(p==='analysis')updateAnalysis();
   if(p==='settings'){
@@ -1652,9 +1787,9 @@ window.updateAuthUI=function(loggedIn){
 
 // Override trade functions to sync with Supabase
 var _origBuyA=buyA;
-buyA=function(id,amt){var t=_origBuyA(id,amt);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+buyA=function(id,amt,reason){var t=_origBuyA(id,amt,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
 var _origSellA=window.sellA;
-window.sellA=function(id,qty){var t=_origSellA(id,qty);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+window.sellA=function(id,qty,reason){var t=_origSellA(id,qty,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
 
 // Override watchlist save
 var _origAddWL=window.addWL;
