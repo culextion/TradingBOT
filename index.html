@@ -83,7 +83,7 @@ select.inp{appearance:auto}
     <button class="nav-tab on" onclick="showPage('dashboard',this)">Dashboard</button>
     <button class="nav-tab" onclick="showPage('bot',this)">Trading Bot</button>
     <button class="nav-tab" onclick="showPage('analysis',this)">Market Analysis</button>
-    <span id="mode-badge" class="nav-tab text-ylw cursor-pointer" onclick="document.querySelector('.nav-tab[onclick*=bot]').click()" title="Go to Trading Bot" style="border-bottom-color:var(--ylw)">PAPER</span>
+    <span id="mode-badge" class="text-xs border rounded px-2 py-0.5 text-ylw border-ylw cursor-pointer" onclick="document.querySelector('.nav-tab[onclick*=bot]').click()" title="Go to Trading Bot" style="margin-left:8px;vertical-align:middle">PAPER</span>
   </div>
 </div>
 <div class="flex items-center gap-3 text-xs">
@@ -523,7 +523,7 @@ var CORR_C={'BTC-ETH':.87,'BTC-SOL':.79,'BTC-BNB':.72,'BTC-XRP':.65,'ETH-SOL':.8
 var CORR_S={'SPY-QQQ':.96,'SPY-IWM':.91,'SPY-AAPL':.82,'QQQ-NVDA':.85,'AAPL-MSFT':.78,'TSLA-NVDA':.62};
 
 var STRATS={
-  hybrid:{name:'Smart Hybrid',desc:'Combines multiple strategies simultaneously. Uses RSI for entry timing, SMA for trend confirmation, and correlation for asset selection. Only enters trades when at least 2 strategies agree.'},
+  hybrid:{name:'Smart Hybrid',desc:'Combines multiple strategies. Enters trades when 2+ strategies agree on the same asset, or when a single signal has high confidence (75%+). Uses RSI, SMA, Bollinger, volume, and correlation analysis.'},
   correlation:{name:'Correlation',desc:'Buys the lagging asset when correlated pairs diverge, expecting mean reversion.'},
   meanrev:{name:'Mean Reversion',desc:'Buys when RSI < 30 (oversold), sells when RSI > 70 (overbought).'},
   momentum:{name:'Momentum',desc:'Buys on golden cross (fast SMA > slow SMA), sells on death cross.'},
@@ -1412,10 +1412,14 @@ function runBot(){if(!bot.on)return;
 
   var moves=analyzeMarket();
   if(bot.strat==='hybrid'){
-    var buys={};moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;}});
-    for(var id in buys){if(buys[id]>=2&&!account.positions.find(function(p){return p.id===id})){
-      var m=moves.find(function(x){return x.id===id&&x.dir==='buy'});
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason);buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');return;}}
+    // Hybrid: trade if 2+ strategies agree, OR single signal with conf >= 75%
+    var buys={},bestSig={};
+    moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
+    for(var id in buys){
+      var multi=buys[id]>=2,highConf=bestSig[id]&&bestSig[id].conf>=75;
+      if((multi||highConf)&&!account.positions.find(function(p){return p.id===id})){
+      var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+']');buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+')');return;}}
   } else {
     var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})});
     if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');}
