@@ -136,9 +136,31 @@ ALTER TABLE price_cache ENABLE ROW LEVEL SECURITY;
 -- Create this as a Supabase Edge Function named 'stock-proxy'
 -- It will proxy requests to Yahoo Finance / Finnhub to bypass CORS
 
+-- Historical price accumulation (builds over time)
+CREATE TABLE IF NOT EXISTS price_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  asset_id TEXT NOT NULL,
+  timeframe TEXT NOT NULL DEFAULT 'hourly',
+  timestamp BIGINT NOT NULL,
+  open NUMERIC NOT NULL,
+  high NUMERIC NOT NULL,
+  low NUMERIC NOT NULL,
+  close NUMERIC NOT NULL,
+  volume NUMERIC DEFAULT 0,
+  source TEXT DEFAULT 'coingecko',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(asset_id, timeframe, timestamp)
+);
+
+ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read price_history" ON price_history FOR SELECT USING (true);
+CREATE POLICY "Anyone can write price_history" ON price_history FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update price_history" ON price_history FOR UPDATE USING (true);
+
 -- ===== INDEXES =====
 CREATE INDEX IF NOT EXISTS idx_trades_user ON trades(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_positions_user ON positions(user_id);
 CREATE INDEX IF NOT EXISTS idx_watchlists_user ON watchlists(user_id, market);
 CREATE INDEX IF NOT EXISTS idx_bot_logs_user ON bot_logs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_price_cache_asset ON price_cache(asset_id, timeframe);
+CREATE INDEX IF NOT EXISTS idx_price_history_asset_ts ON price_history(asset_id, timeframe, timestamp DESC);

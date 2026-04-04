@@ -49,9 +49,21 @@ select.inp{appearance:auto}
 .theme-toggle{background:none;border:1px solid var(--bd);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);padding:0}
 .theme-toggle:hover{color:var(--t1);border-color:var(--t1);background:var(--s2)}
 .bot-mkt-btn.on{background:var(--blu) !important;color:#fff !important}
+/* Toast notifications (Task 4a) */
+.toast-container{position:fixed;top:48px;right:16px;z-index:999;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;font-family:'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:#fff;backdrop-filter:blur(8px);box-shadow:0 4px 12px rgba(0,0,0,.3);animation:toastIn .3s ease-out,toastOut .3s ease-in 2.7s forwards;pointer-events:auto}
+.toast-buy{background:rgba(63,185,80,.92);border-left:3px solid #2ea043}
+.toast-sell{background:rgba(248,81,73,.92);border-left:3px solid #da3633}
+.toast-warn{background:rgba(210,153,34,.92);border-left:3px solid #9a6700}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+/* Sparkline in position cards (Task 4b) */
+.pos-spark{flex-shrink:0}
 </style>
 </head>
 <body class="dark">
+<!-- Toast notification container (Task 4a) -->
+<div id="toast-container" class="toast-container"></div>
 
 <!-- TICKER -->
 <div class="bg-s1 border-b border-bd h-6 flex-shrink-0 ticker-wrap">
@@ -355,6 +367,16 @@ select.inp{appearance:auto}
       <div id="sim-chart" style="height:200px;display:none"></div>
     </div>
   </div>
+  <!-- Performance Analytics (Task 2) -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Performance Analytics</span></div>
+    <div class="pb p-4" id="c-perf-analytics"><div class="text-t2 text-xs text-center py-4">Start trading to see performance analytics</div></div>
+  </div>
+  <!-- Cumulative P&L Chart -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Cumulative P&L Over Time</span></div>
+    <div class="pb" id="c-pnl-chart" style="height:220px"><div class="flex items-center justify-center h-full text-t2 text-xs">Complete trades to see P&L chart</div></div>
+  </div>
 </div>
 </div>
 
@@ -558,6 +580,7 @@ var STOCKS=[
   {id:'amd',sym:'AMD',name:'AMD',base:165,vol:.032},{id:'jpm',sym:'JPM',name:'JPMorgan',base:200,vol:.016},
   {id:'coin',sym:'COIN',name:'Coinbase',base:225,vol:.04},{id:'pltr',sym:'PLTR',name:'Palantir',base:22,vol:.04},
 ];
+var ALL_STOCKS=STOCKS; // Alias for dynamic search additions
 var CORR_C={'BTC-ETH':.87,'BTC-SOL':.79,'BTC-BNB':.72,'BTC-XRP':.65,'ETH-SOL':.82,'ETH-BNB':.68,'SOL-BNB':.58,'BNB-XRP':.55};
 var CORR_S={'SPY-QQQ':.96,'SPY-IWM':.91,'SPY-AAPL':.82,'QQQ-NVDA':.85,'AAPL-MSFT':.78,'TSLA-NVDA':.62};
 
@@ -571,10 +594,15 @@ var STRATS={
 };
 
 // ===================== STATE =====================
-var mkt='crypto',prices={},ohlc={},stkData={},chrt={},ser={},sel='bitcoin',searchTO=null;
+var mkt='crypto',prices={},ohlc={},ohlcDeep={},stkData={},chrt={},ser={},sel='bitcoin',searchTO=null;
 var wl=[];// custom watchlist
 var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
-var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[]};
+var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
+  cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
+  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0}, // Task 3b
+  consecutiveLosses:0,                                   // Task 3d
+  pausedUntil:0                                          // Task 3d
+};
 var apiQ=[],apiOn=false;
 var tileDays={main:7,c2:7,c3:7};
 var tileAsset={main:'bitcoin',c2:'ethereum',c3:'solana'};
@@ -591,19 +619,36 @@ function cgOHLC(id,days){
   var tf=String(days||7);
   // Check Supabase price cache first
   var cacheCheck=SB.user?SB.getCachedPrice(id,tf):Promise.resolve(null);
-  return cacheCheck.then(function(cached){
-    if(cached&&Array.isArray(cached)&&cached.length>0)return cached;
+  // Also load accumulated history for deeper analysis
+  var historyCheck=SB.client?SB.loadPriceHistory(id,'hourly',2000):Promise.resolve([]);
+  return Promise.all([cacheCheck,historyCheck]).then(function(results){
+    var cached=results[0],history=results[1]||[];
+    if(cached&&Array.isArray(cached)&&cached.length>0){
+      // Merge cache with accumulated history for richer dataset
+      var merged=SB.mergePriceData(history,cached);
+      if(merged.length>cached.length){ohlcDeep[id]=merged;}
+      return cached;
+    }
     // Cache miss — fetch from CoinGecko
     return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
       var parsed=Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[];
-      // Save to cache
-      if(parsed.length>0&&SB.user){try{SB.setCachedPrice(id,tf,parsed)}catch(e){}}
+      if(parsed.length>0){
+        // Save to cache
+        if(SB.user){try{SB.setCachedPrice(id,tf,parsed)}catch(e){}}
+        // Accumulate into price_history for long-term storage
+        if(SB.client){try{SB.savePriceHistory(id,parsed,'hourly')}catch(e){}}
+        // Merge with existing history for deeper analysis
+        var merged=SB.mergePriceData(history,parsed);
+        if(merged.length>parsed.length){ohlcDeep[id]=merged;}
+      }
       return parsed;
     });
   }).catch(function(){
     // Cache check failed, fall back to direct API
     return qApi('https://api.coingecko.com/api/v3/coins/'+id+'/ohlc?vs_currency=usd&days='+(days||7)).then(function(d){
-      return Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[]});
+      var parsed=Array.isArray(d)?d.map(function(k){return{time:Math.floor(k[0]/1000),open:k[1],high:k[2],low:k[3],close:k[4]}}):[];
+      if(parsed.length>0&&SB.client){try{SB.savePriceHistory(id,parsed,'hourly')}catch(e){}}
+      return parsed;});
   });
 }
 
@@ -990,6 +1035,15 @@ function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,ti
   setText('pf-cash','$'+fp(account.cash));
   var m=RiskEngine.calcMetrics(account.trades,account.start);setText('pf-wr',m&&m.totalTrades>0?(m.winRate*100).toFixed(0)+'%':'--');}
 
+function posSparkline(assetId,up){
+  var d=mkt==='crypto'?(ohlc[assetId]||[]):(stkData[assetId]||[]);
+  if(liveCandles[assetId]&&liveCandles[assetId].length>5)d=liveCandles[assetId];
+  if(!d||d.length<5)return'';
+  var r=d.slice(-30),c=r.map(function(x){return x.close}),mn=Math.min.apply(null,c),mx=Math.max.apply(null,c),rg=mx-mn||1,w=56,h=20;
+  var pts=c.map(function(v,i){return(i/(c.length-1)*w).toFixed(1)+','+(h-((v-mn)/rg*h)).toFixed(1)}).join(' ');
+  return'<svg class="pos-spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="margin-left:6px"><polyline points="'+pts+'" fill="none" style="stroke:var('+(up?'--grn':'--red')+')" stroke-width="1.5"/></svg>';
+}
+
 function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
   if(!account.positions.length){el.innerHTML='<div class="text-t2 text-center py-4" style="font-size:var(--fs-sm)">No open positions</div>';return;}
   var posIdx=0;
@@ -997,9 +1051,10 @@ function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
     var pr=prOf(p.id),invested=p.avgPrice*p.qty,mktVal=pr?pr*p.qty:0,pnl=mktVal-invested,pct=invested?(pnl/invested)*100:0;
     var c=pnl>=0?'grn':'red';
     var idx=posIdx++;
+    var sparkHtml=posSparkline(p.id,pnl>=0);
     return '<div style="background:var(--s2);border-radius:6px;padding:8px 10px;margin-bottom:5px;border-left:3px solid var(--'+c+')" onclick="var d=this.querySelector(\'.pos-detail\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\'">'+
       '<div class="flex justify-between items-center" style="font-size:var(--fs-md)">'+
-        '<div><span class="font-bold text-t1" style="font-size:13px">'+p.sym+'</span> <span class="text-t2" style="font-size:var(--fs-xs)">'+p.qty.toFixed(6)+' units</span></div>'+
+        '<div class="flex items-center"><span class="font-bold text-t1" style="font-size:13px">'+p.sym+'</span> <span class="text-t2" style="font-size:var(--fs-xs);margin-left:4px">'+p.qty.toFixed(6)+' units</span>'+sparkHtml+'</div>'+
         '<div class="flex items-center gap-2">'+
           '<div class="text-right"><div class="font-bold" style="font-size:12px;color:var(--t1)">$'+fp(mktVal)+'</div><div class="font-bold text-'+c+'" style="font-size:11px">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+' <span style="font-size:9px">('+(pct>=0?'+':'')+pct.toFixed(2)+'%)</span></div></div>'+
         '</div>'+
@@ -1103,21 +1158,27 @@ function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)r
 function analyzeMarket(){
   var moves=[];var wla=getWL();
   wla.forEach(function(a){
-    var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
+    // Use deeper accumulated history when available for better indicators
+    var d=mkt==='crypto'?(ohlcDeep[a.id]&&ohlcDeep[a.id].length>(ohlc[a.id]?ohlc[a.id].length:0)?ohlcDeep[a.id]:ohlc[a.id]):stkData[a.id];
     if(!d||d.length<20)return;
     var rsi=cRSI(d),pr=d[d.length-1].close,ch=chOf(a.id);
     var s20=sma(d,20);
     var s50=d.length>=50?sma(d,50):s20;
     var hasPos=account.positions.find(function(p){return p.id===a.id});
 
-    // RSI signals
-    if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — strong bounce expected',conf:80,strat:'meanrev'});
+    // RSI signals — deeper history gives more accurate RSI
+    if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — strong bounce expected'+(d.length>200?' ('+d.length+' candles)':''),conf:80,strat:'meanrev'});
     else if(rsi<35)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold — mean reversion likely',conf:70,strat:'meanrev'});
     if(rsi>75&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought — take profit',conf:78,strat:'meanrev'});
 
-    // SMA trend signals
+    // SMA trend signals — with deep history, also use SMA100/200
     if(pr>s20&&s20>s50&&ch>0.5)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Strong uptrend — price > SMA20 > SMA50, momentum +'+ch.toFixed(1)+'%',conf:72,strat:'momentum'});
     if(pr<s20&&s20<s50&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Downtrend — price below both SMAs',conf:74,strat:'momentum'});
+    // Deep history bonus: SMA200 golden cross
+    if(d.length>=200){
+      var s200=sma(d,200);
+      if(pr>s200&&s50>s200&&!hasPos){moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Above SMA200 — long-term bullish ('+d.length+' candles analyzed)',conf:66,strat:'momentum'});}
+    }
 
     // Bollinger bounce
     if(d.length>=20){
@@ -1134,6 +1195,12 @@ function analyzeMarket(){
       var avgVol=d.slice(-24).reduce(function(s,x){return s+(x.volume||0)},0)/24;
       if(recentVol>avgVol*2&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Volume spike '+((recentVol/avgVol).toFixed(1))+'x avg — strong buying pressure',conf:65,strat:'volume'});
     }
+  });
+
+  // Apply adaptive confidence weights (Task 3b)
+  moves.forEach(function(m){
+    var w=bot.stratWeights[m.strat]||1.0;
+    m.conf=Math.min(99,Math.max(1,m.conf*w));
   });
 
   // Correlation divergence signals
@@ -1207,12 +1274,15 @@ function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||am
   var qty=eff/pr;account.cash-=amt;account.fees+=cost.total;
   var ex=account.positions.find(function(p){return p.id===id});
   if(ex){var tq=ex.qty+qty;ex.avgPrice=(ex.avgPrice*ex.qty+pr*qty)/tq;ex.qty=tq;}
-  else account.positions.push({id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,avgPrice:pr});
+  else account.positions.push({id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,avgPrice:pr,entryTime:Date.now()});
   var profName=(FEE_PROFILES[feeProfile]||{name:feeProfile}).name;
-  var t={type:'BUY',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:amt,invested:eff,fees:cost.total,
+  var sym=(findA(id)||{sym:id}).sym;
+  var t={type:'BUY',id:id,sym:sym,qty:qty,price:pr,amount:amt,invested:eff,fees:cost.total,
     feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName},
-    time:new Date().toLocaleTimeString(),reason:reason||null,notes:''};
-  account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
+    time:new Date().toLocaleTimeString(),ts:Date.now(),reason:reason||null,notes:''};
+  account.trades.unshift(t);bot.trades++;
+  showToast('[BUY] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr),'buy');
+  updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
 
 window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
   var pr=prOf(id);if(!pr)return null;if(!qty||qty>=pos.qty)qty=pos.qty;
@@ -1222,10 +1292,21 @@ window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){
   account.cash+=net;account.dayPnL+=pnl;bot.pnl+=pnl;account.fees+=cost.total;
   pos.qty-=qty;if(pos.qty<.00001)account.positions=account.positions.filter(function(p){return p.id!==id});
   var profName=(FEE_PROFILES[feeProfile]||{name:feeProfile}).name;
-  var t={type:'SELL',id:id,sym:(findA(id)||{sym:id}).sym,qty:qty,price:pr,amount:net,gross:gross,invested:invested,pnl:pnl,fees:cost.total,
+  var sym=(findA(id)||{sym:id}).sym;
+  var t={type:'SELL',id:id,sym:sym,qty:qty,price:pr,amount:net,gross:gross,invested:invested,pnl:pnl,fees:cost.total,
     feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName},
-    time:new Date().toLocaleTimeString(),reason:reason||null,notes:''};
-  account.trades.unshift(t);bot.trades++;updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;};
+    time:new Date().toLocaleTimeString(),ts:Date.now(),reason:reason||null,notes:''};
+  account.trades.unshift(t);bot.trades++;
+  // Toast notification (Task 4a)
+  showToast('[SELL] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr)+' '+(pnl>=0?'+':'')+' $'+fp(Math.abs(pnl)),pnl>=0?'sell':'warn');
+  // Task 3b: Update strategy weights based on trade outcome
+  updateStratWeights(t);
+  // Task 3d: Track consecutive losses
+  if(pnl<0){bot.consecutiveLosses++;if(bot.consecutiveLosses>=3&&bot.on){bot.pausedUntil=Date.now()+30*60*1000;blog('WARNING: 3 consecutive losses — bot pausing for 30 minutes');showToast('Bot paused: 3 consecutive losses','warn');}}
+  else{bot.consecutiveLosses=0;}
+  // Task 3a: Record cooldown for this asset
+  bot.cooldowns[id]=Date.now();
+  updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;};
 
 function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p.qty*prOf(p.id)});return v;}
 
@@ -1436,23 +1517,42 @@ function updateBotPerf(){
 }
 
 function runBot(){if(!bot.on)return;
+
+  // Task 3d: Consecutive loss protection — check if paused
+  var now=Date.now();
+  if(bot.pausedUntil>now){
+    var remMin=Math.ceil((bot.pausedUntil-now)/60000);
+    blog('BOT PAUSED: '+remMin+'min remaining after 3 consecutive losses');
+    return;
+  }
+  if(bot.pausedUntil>0&&now>=bot.pausedUntil){
+    bot.pausedUntil=0;bot.consecutiveLosses=0;
+    blog('Bot resuming after cooldown — consecutive loss counter reset');
+  }
+
   // If data seems stale, try a quick refresh before giving up
   var cs=ConnGuard.canTradeSafely();
   if(!cs.safe){
-    // Attempt a price refresh instead of just pausing
     fhAllQuotes(getWL()).then(function(){
       ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
     }).catch(function(){});
-    // Only block if data is REALLY old (>10 minutes)
     if(ConnGuard.staleSec>180){blog('PAUSED: '+cs.reason+' — attempting refresh');return;}
   }
   if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
 
+  // Task 3c: Market regime detection — adjust risk in bearish regimes
+  var regime=detectMarketRegime();
+  var regimeMultiplier=1.0;
+  if(regime.bearish){
+    regimeMultiplier=0.5; // Halve position size in bear markets
+  }
+
   // Stop/trail check
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
   var trail=parseFloat(gv('r-trail')||3)/100;
+  // Tighten stops in bearish regime (Task 3c)
+  if(regime.bearish){sl=sl*0.7;trail=trail*0.7;}
   account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
-    // Trailing stop: track highest price since entry
     if(!pos.highWater||pr>pos.highWater)pos.highWater=pr;
     var trailPct=pos.highWater?(pr-pos.highWater)/pos.highWater:0;
     if(trail>0&&pos.highWater&&pct>0&&trailPct<=-trail){
@@ -1464,20 +1564,19 @@ function runBot(){if(!bot.on)return;
   trackEquity();updateBotPerf();
 
   var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
-  var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
+  var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100)*regimeMultiplier;
 
   // DCA mode
   if(bot.strat==='dca'){
     var dcaInt=parseFloat(gv('dca-interval')||15)*60*1000;
-    var now=Date.now();
     if(!bot.lastDca||now-bot.lastDca>=dcaInt){
-      var dcaAmt=parseFloat(gv('dca-amount')||500);
+      var dcaAmt=parseFloat(gv('dca-amount')||500)*regimeMultiplier;
       var targets=[];document.querySelectorAll('.dca-chk:checked').forEach(function(c){targets.push(c.value)});
       if(!targets.length)targets=getAssets().map(function(a){return a.id});
       var perAsset=dcaAmt/targets.length;
       targets.forEach(function(id){
         if(perAsset>0&&perAsset<=account.cash){
-          var a=findA(id);buyA(id,perAsset,'DCA — scheduled buy of $'+fp(perAsset)+' per '+(gv('dca-interval')||15)+'min interval');
+          buyA(id,perAsset,'DCA — scheduled buy of $'+fp(perAsset)+' per '+(gv('dca-interval')||15)+'min interval');
         }
       });
       bot.lastDca=now;
@@ -1487,17 +1586,26 @@ function runBot(){if(!bot.on)return;
 
   var moves=analyzeMarket();
   if(bot.strat==='hybrid'){
-    // Hybrid: trade if 2+ strategies agree, OR single signal with conf >= 75%
     var buys={},bestSig={};
     moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
     for(var id in buys){
       var multi=buys[id]>=2,highConf=bestSig[id]&&bestSig[id].conf>=75;
       if((multi||highConf)&&!account.positions.find(function(p){return p.id===id})){
+      // Task 3a: Cooldown check
+      if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago');continue;}
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+']');buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+')');return;}}
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+']');
+      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+')');
+      if(t)bot.cooldowns[id]=now;
+      return;}}
   } else {
-    var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})});
-    if(m){blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');}
+    var m=moves.find(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})
+      &&!(bot.cooldowns[x.id]&&(now-bot.cooldowns[x.id])<300000)}); // Task 3a: cooldown check
+    if(m){
+      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason);
+      var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+')');
+      if(t)bot.cooldowns[m.id]=now;
+    }
   }
   updateNextMoves();
 }
@@ -1505,6 +1613,159 @@ function runBot(){if(!bot.on)return;
 function blog(msg){bot.logs.unshift({t:new Date().toLocaleTimeString(),m:msg});if(bot.logs.length>50)bot.logs.length=50;
   var el=document.getElementById('bot-log');if(!el)return;
   el.innerHTML=bot.logs.map(function(l){return'<div class="text-xs mb-1"><span class="text-t2">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>'}).join('');}
+
+// ===================== TOAST NOTIFICATIONS (Task 4a) =====================
+function showToast(msg,type){
+  var c=document.getElementById('toast-container');if(!c)return;
+  var t=document.createElement('div');
+  t.className='toast toast-'+(type||'buy');
+  t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},3100);
+}
+
+// ===================== PERFORMANCE ANALYTICS (Task 2) =====================
+function renderPerformanceAnalytics(){
+  var el=document.getElementById('c-perf-analytics');if(!el)return;
+  var sells=account.trades.filter(function(t){return t.type==='SELL'&&t.pnl!==undefined});
+  if(!sells.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Complete trades to see performance analytics</div>';return;}
+
+  // Win rate by strategy
+  var byStrat={};sells.forEach(function(t){
+    var s=t.reason&&t.reason.match(/strategy:\s*(\w+)/)?t.reason.match(/strategy:\s*(\w+)/)[1]:(t.reason&&t.reason.match(/\((\w+)\)$/)?t.reason.match(/\((\w+)\)$/)[1]:'unknown');
+    if(!byStrat[s])byStrat[s]={wins:0,losses:0,pnl:0};
+    if(t.pnl>0)byStrat[s].wins++;else byStrat[s].losses++;
+    byStrat[s].pnl+=t.pnl;
+  });
+
+  // Win rate by asset
+  var byAsset={};sells.forEach(function(t){
+    if(!byAsset[t.sym])byAsset[t.sym]={wins:0,losses:0,pnl:0};
+    if(t.pnl>0)byAsset[t.sym].wins++;else byAsset[t.sym].losses++;
+    byAsset[t.sym].pnl+=t.pnl;
+  });
+
+  // Average hold time
+  var holdTimes=[];
+  var buyMap={};
+  account.trades.slice().reverse().forEach(function(t){
+    if(t.type==='BUY'){if(!buyMap[t.id])buyMap[t.id]=[];buyMap[t.id].push(t);}
+    if(t.type==='SELL'&&buyMap[t.id]&&buyMap[t.id].length){
+      var buy=buyMap[t.id].shift();
+      if(buy.time&&t.time){
+        var bt=new Date('2000-01-01 '+buy.time).getTime();
+        var st=new Date('2000-01-01 '+t.time).getTime();
+        var diff=st-bt;if(diff<0)diff+=86400000;
+        holdTimes.push(diff);
+      }
+    }
+  });
+  var avgHold=holdTimes.length?holdTimes.reduce(function(a,b){return a+b},0)/holdTimes.length:0;
+  var avgHoldStr=avgHold>3600000?((avgHold/3600000).toFixed(1)+'h'):avgHold>60000?((avgHold/60000).toFixed(0)+'m'):((avgHold/1000).toFixed(0)+'s');
+  if(!holdTimes.length)avgHoldStr='--';
+
+  // Best/worst trade
+  var best=sells.reduce(function(a,b){return(a.pnl||0)>(b.pnl||0)?a:b},sells[0]);
+  var worst=sells.reduce(function(a,b){return(a.pnl||0)<(b.pnl||0)?a:b},sells[0]);
+
+  // Build HTML
+  var h='<div class="grid grid-cols-4 gap-3 mb-4">';
+  // KPI cards
+  var totalWins=sells.filter(function(t){return t.pnl>0}).length;
+  var overallWR=sells.length?(totalWins/sells.length*100).toFixed(1)+'%':'--';
+  h+='<div class="bg-s2 rounded-lg p-3 text-center"><div class="text-t2" style="font-size:9px">Overall Win Rate</div><div class="font-bold text-blu" style="font-size:18px">'+overallWR+'</div></div>';
+  h+='<div class="bg-s2 rounded-lg p-3 text-center"><div class="text-t2" style="font-size:9px">Avg Hold Time</div><div class="font-bold text-t1" style="font-size:18px">'+avgHoldStr+'</div></div>';
+  h+='<div class="bg-s2 rounded-lg p-3 text-center"><div class="text-t2" style="font-size:9px">Best Trade</div><div class="font-bold text-grn" style="font-size:16px">'+best.sym+' +$'+fp(best.pnl)+'</div></div>';
+  h+='<div class="bg-s2 rounded-lg p-3 text-center"><div class="text-t2" style="font-size:9px">Worst Trade</div><div class="font-bold text-red" style="font-size:16px">'+worst.sym+' -$'+fp(Math.abs(worst.pnl))+'</div></div>';
+  h+='</div>';
+
+  // Win rate by strategy table
+  h+='<div class="grid grid-cols-2 gap-4">';
+  h+='<div><div class="text-t2 text-xs font-bold uppercase mb-2">Win Rate by Strategy</div>';
+  var stratKeys=Object.keys(byStrat);
+  if(stratKeys.length){
+    h+='<div class="space-y-1">';
+    stratKeys.forEach(function(s){
+      var d=byStrat[s];var total=d.wins+d.losses;var wr=total?(d.wins/total*100):0;
+      var barW=Math.max(2,wr);
+      h+='<div class="bg-s2 rounded p-2" style="font-size:11px"><div class="flex justify-between mb-1"><span class="font-bold text-t1">'+s+'</span><span class="text-t2">'+d.wins+'W/'+d.losses+'L</span></div>';
+      h+='<div class="flex items-center gap-2"><div class="flex-1 bg-s3 rounded-full" style="height:6px"><div class="rounded-full '+(wr>=50?'bg-grn':'bg-red')+'" style="height:6px;width:'+barW+'%"></div></div><span class="font-bold '+(wr>=50?'text-grn':'text-red')+'" style="min-width:35px;text-align:right">'+wr.toFixed(0)+'%</span></div>';
+      h+='<div class="text-t2 mt-1" style="font-size:9px">P&L: <span class="'+(d.pnl>=0?'text-grn':'text-red')+' font-bold">'+(d.pnl>=0?'+':'-')+'$'+fp(Math.abs(d.pnl))+'</span></div></div>';
+    });
+    h+='</div>';
+  } else h+='<div class="text-t2 text-xs">No strategy data yet</div>';
+  h+='</div>';
+
+  // Win rate by asset table
+  h+='<div><div class="text-t2 text-xs font-bold uppercase mb-2">Win Rate by Asset</div>';
+  var assetKeys=Object.keys(byAsset).sort(function(a,b){return byAsset[b].pnl-byAsset[a].pnl});
+  if(assetKeys.length){
+    h+='<div class="space-y-1">';
+    assetKeys.forEach(function(s){
+      var d=byAsset[s];var total=d.wins+d.losses;var wr=total?(d.wins/total*100):0;
+      h+='<div class="bg-s2 rounded p-2" style="font-size:11px"><div class="flex justify-between mb-1"><span class="font-bold text-t1">'+s+'</span><span class="'+(d.pnl>=0?'text-grn':'text-red')+' font-bold">'+(d.pnl>=0?'+':'-')+'$'+fp(Math.abs(d.pnl))+'</span></div>';
+      h+='<div class="flex items-center gap-2"><div class="flex-1 bg-s3 rounded-full" style="height:6px"><div class="rounded-full '+(wr>=50?'bg-grn':'bg-red')+'" style="height:6px;width:'+Math.max(2,wr)+'%"></div></div><span class="font-bold '+(wr>=50?'text-grn':'text-red')+'" style="min-width:35px;text-align:right">'+wr.toFixed(0)+'%</span></div></div>';
+    });
+    h+='</div>';
+  } else h+='<div class="text-t2 text-xs">No asset data yet</div>';
+  h+='</div></div>';
+
+  el.innerHTML=h;
+
+  // Cumulative P&L chart
+  renderPnLChart();
+}
+
+var _pnlChartInst=null,_pnlSeries=null;
+function renderPnLChart(){
+  var el=document.getElementById('c-pnl-chart');if(!el)return;
+  var sells=account.trades.filter(function(t){return t.type==='SELL'&&t.pnl!==undefined}).reverse();
+  if(sells.length<2){el.innerHTML='<div class="flex items-center justify-center h-full text-t2 text-xs">Complete 2+ trades to see P&L chart</div>';return;}
+  if(_pnlChartInst){try{_pnlChartInst.remove()}catch(e){}_pnlChartInst=null;}
+  _pnlChartInst=mkChart('c-pnl-chart');if(!_pnlChartInst)return;
+  chrt['pnl']=_pnlChartInst;
+  var cumPnl=0;
+  var baseTime=Math.floor(Date.now()/1000)-sells.length*3600;
+  var data=sells.map(function(t,i){cumPnl+=t.pnl;return{time:baseTime+i*3600,value:cumPnl};});
+  var up=cumPnl>=0;
+  var _g=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
+  var _r=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
+  var col=up?_g:_r;
+  _pnlSeries=_pnlChartInst.addAreaSeries({topColor:col+'40',bottomColor:col+'08',lineColor:col,lineWidth:2,priceLineVisible:false});
+  // Add zero line
+  var zeroLine=_pnlChartInst.addLineSeries({color:'#8b949e',lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  zeroLine.setData([{time:data[0].time,value:0},{time:data[data.length-1].time,value:0}]);
+  _pnlSeries.setData(data);
+  _pnlChartInst.timeScale().fitContent();
+}
+
+// ===================== MARKET REGIME DETECTION (Task 3c) =====================
+function detectMarketRegime(){
+  var benchId=mkt==='crypto'?'bitcoin':'spy';
+  var ch=chOf(benchId)||0;
+  var regime={bearish:ch<=-3,change:ch};
+  if(regime.bearish){
+    blog('REGIME WARNING: '+(mkt==='crypto'?'BTC':'SPY')+' down '+Math.abs(ch).toFixed(1)+'% in 24h — tightening risk controls');
+  }
+  return regime;
+}
+
+// ===================== ADAPTIVE CONFIDENCE (Task 3b) =====================
+function updateStratWeights(trade){
+  if(!trade||trade.type!=='SELL'||trade.pnl===undefined)return;
+  // Extract strategy from trade reason
+  var match=trade.reason?trade.reason.match(/strategy:\s*(\w+)/):null;
+  var strat=match?match[1]:null;
+  if(!strat){match=trade.reason?trade.reason.match(/\((\w+)\)$/):null;strat=match?match[1]:null;}
+  if(!strat||!bot.stratWeights[strat])return;
+  if(trade.pnl>0){
+    // Win: increase weight (up to 1.5 cap)
+    bot.stratWeights[strat]=Math.min(1.5,bot.stratWeights[strat]+0.05);
+  }else{
+    // Loss: decrease weight (floor at 0.5)
+    bot.stratWeights[strat]=Math.max(0.5,bot.stratWeights[strat]-0.08);
+  }
+}
 
 window.applyPreset=function(p){
   var presets={
@@ -1732,7 +1993,7 @@ window.showPage=function(p,btn){
   if(p==='dashboard')setTimeout(resizeCharts,200);
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
-  if(p==='analysis')updateAnalysis();
+  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();}
   if(p==='settings'){
     var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
@@ -1831,7 +2092,8 @@ window.toggleTheme=function(){
 function saveState(){
   try{
     localStorage.setItem('ct_account',JSON.stringify({cash:account.cash,start:account.start,positions:account.positions,trades:account.trades.slice(0,50),dayPnL:account.dayPnL,fees:account.fees}));
-    localStorage.setItem('ct_bot',JSON.stringify({strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20)}));
+    localStorage.setItem('ct_bot',JSON.stringify({strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20),
+      stratWeights:bot.stratWeights,consecutiveLosses:bot.consecutiveLosses,cooldowns:bot.cooldowns}));
     localStorage.setItem('ct_mkt',mkt);
     localStorage.setItem('ct_rsize',gv('r-size'));localStorage.setItem('ct_rsl',gv('r-sl'));
     localStorage.setItem('ct_rtp',gv('r-tp'));localStorage.setItem('ct_rmax',gv('r-max'));
@@ -1844,7 +2106,11 @@ function loadState(){
     var sa=localStorage.getItem('ct_account');
     if(sa){var a=JSON.parse(sa);account.cash=a.cash;account.start=a.start;account.positions=a.positions||[];account.trades=a.trades||[];account.dayPnL=a.dayPnL||0;account.fees=a.fees||0;}
     var sb=localStorage.getItem('ct_bot');
-    if(sb){var b=JSON.parse(sb);bot.strat=b.strat;bot.pnl=b.pnl||0;bot.trades=b.trades||0;bot.logs=b.logs||[];}
+    if(sb){var b=JSON.parse(sb);bot.strat=b.strat;bot.pnl=b.pnl||0;bot.trades=b.trades||0;bot.logs=b.logs||[];
+      if(b.stratWeights)bot.stratWeights=b.stratWeights;
+      if(b.consecutiveLosses)bot.consecutiveLosses=b.consecutiveLosses;
+      if(b.cooldowns)bot.cooldowns=b.cooldowns;
+    }
     var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
     var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
     var sf=localStorage.getItem('ct_fee');if(sf){var el=document.getElementById('fee-sel');if(el)el.value=sf;}
@@ -1857,6 +2123,30 @@ function loadState(){
 setInterval(saveState,10000);
 // Save on page unload
 window.addEventListener('beforeunload',saveState);
+
+// ===================== KEYBOARD SHORTCUTS (Task 4c) =====================
+document.addEventListener('keydown',function(e){
+  // Don't trigger shortcuts when typing in input fields
+  var tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+  // B = Open buy form / focus amount input
+  if(e.key==='b'||e.key==='B'){
+    e.preventDefault();
+    // Navigate to Bot page if not already there
+    var botPage=document.getElementById('page-bot');
+    if(botPage&&botPage.style.display==='none'){
+      document.querySelectorAll('.nav-tab')[1].click();
+    }
+    setTimeout(function(){
+      var inp=document.getElementById('mt-amount');
+      if(inp){inp.focus();inp.select();}
+    },100);
+  }
+  // Escape = Close modals/overlays
+  if(e.key==='Escape'){
+    var authOv=document.getElementById('auth-overlay');
+    if(authOv&&authOv.style.display!=='none'){authOv.style.display='none';return;}
+  }
+});
 
 // ===================== INIT =====================
 ConnGuard.init();

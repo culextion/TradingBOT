@@ -248,6 +248,59 @@ var SB = {
       asset_id: assetId, timeframe: timeframe, data: ohlcData, fetched_at: new Date().toISOString(),
     }, { onConflict: 'asset_id,timeframe' });
   },
+
+  // ---- PRICE HISTORY (accumulates over time) ----
+  savePriceHistory: async function(assetId, candles, timeframe) {
+    if (!this.client || !candles || !candles.length) return;
+    timeframe = timeframe || 'hourly';
+    var rows = candles.map(function(c) {
+      return {
+        asset_id: assetId,
+        timeframe: timeframe,
+        timestamp: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume || 0,
+        source: 'coingecko'
+      };
+    });
+    // Upsert in batches of 100
+    for (var i = 0; i < rows.length; i += 100) {
+      var batch = rows.slice(i, i + 100);
+      await this.client.from('price_history').upsert(batch, { onConflict: 'asset_id,timeframe,timestamp', ignoreDuplicates: true });
+    }
+  },
+
+  // Load accumulated price history — returns merged candles (cached + new)
+  loadPriceHistory: async function(assetId, timeframe, limit) {
+    if (!this.client) return [];
+    timeframe = timeframe || 'hourly';
+    limit = limit || 2000;
+    var { data } = await this.client.from('price_history')
+      .select('timestamp,open,high,low,close,volume')
+      .eq('asset_id', assetId)
+      .eq('timeframe', timeframe)
+      .order('timestamp', { ascending: true })
+      .limit(limit);
+    if (!data || !data.length) return [];
+    return data.map(function(r) {
+      return { time: parseInt(r.timestamp), open: parseFloat(r.open), high: parseFloat(r.high), low: parseFloat(r.low), close: parseFloat(r.close), volume: parseFloat(r.volume || 0) };
+    });
+  },
+
+  // Merge new candles with existing history (append new, update latest)
+  mergePriceData: function(existing, fresh) {
+    if (!existing || !existing.length) return fresh || [];
+    if (!fresh || !fresh.length) return existing;
+    var byTime = {};
+    existing.forEach(function(c) { byTime[c.time] = c; });
+    fresh.forEach(function(c) { byTime[c.time] = c; }); // newer overwrites
+    var merged = Object.keys(byTime).map(function(k) { return byTime[k]; });
+    merged.sort(function(a, b) { return a.time - b.time; });
+    return merged;
+  },
 };
 
 // Helper
