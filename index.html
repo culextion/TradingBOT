@@ -389,7 +389,7 @@ select.inp{appearance:auto}
           <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
           <input id="mt-search" class="inp" placeholder="Search symbol or name..." autocomplete="off" oninput="mtSearchFilter(this.value)" onfocus="mtSearchFilter(this.value)" style="font-size:11px"/>
           <input type="hidden" id="mt-asset"/>
-          <div id="mt-search-drop" class="search-drop" style="display:none;max-height:200px;overflow-y:auto;position:absolute;left:0;right:0;top:100%;z-index:100;background:var(--s2);border:1px solid var(--bd);border-radius:6px;margin-top:2px"></div>
+          <div id="mt-search-drop" style="display:none;max-height:200px;overflow-y:auto;position:absolute;left:0;right:0;top:100%;z-index:100;background:var(--s2);border:1px solid var(--bd);border-radius:6px;margin-top:2px"></div>
         </div>
         <div style="width:90px">
           <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Current Price</label>
@@ -2475,24 +2475,30 @@ function mtPopulate(){
 
 window.mtSearchFilter=function(q){
   var drop=document.getElementById('mt-search-drop');if(!drop)return;
-  // Build combined asset list: watchlist + all crypto + all stocks + custom
+  try{
+  // Build asset list filtered by current market mode
   var seen={},all=[];
-  function addAsset(a,tag){if(!a||seen[a.id])return;seen[a.id]=true;all.push({id:a.id,sym:a.sym,name:a.name,tag:tag});}
-  getWL().forEach(function(a){addAsset(a,'WL')});
-  CRYPTO.forEach(function(a){addAsset(a,'Crypto')});
-  (ALL_STOCKS||STOCKS).forEach(function(a){addAsset(a,'Stock')});
-  wl.forEach(function(a){addAsset(a,'Custom')});
-  // Filter
-  var qu=(q||'').toLowerCase();
+  function addA(a,tag){if(!a||!a.id||seen[a.id])return;seen[a.id]=true;all.push({id:a.id,sym:a.sym||'',name:a.name||'',tag:tag});}
+  getWL().forEach(function(a){addA(a,'Watchlist')});
+  if(mkt==='crypto'){
+    CRYPTO.forEach(function(a){addA(a,'Crypto')});
+    wl.filter(function(w){return w.mkt==='crypto'}).forEach(function(a){addA(a,'Custom')});
+  } else {
+    (typeof ALL_STOCKS!=='undefined'?ALL_STOCKS:STOCKS).forEach(function(a){addA(a,'Stock')});
+    wl.filter(function(w){return w.mkt==='stocks'}).forEach(function(a){addA(a,'Custom')});
+  }
+  // Filter by query
+  var qu=(q||'').trim().toLowerCase();
   var results=qu?all.filter(function(a){return a.sym.toLowerCase().indexOf(qu)>-1||a.name.toLowerCase().indexOf(qu)>-1||a.id.toLowerCase().indexOf(qu)>-1}):all;
-  results=results.slice(0,15);
-  if(!results.length){drop.innerHTML='<div class="text-t2 text-xs p-2">No matches</div>';drop.style.display='block';return;}
+  results=results.slice(0,12);
+  if(!results.length){drop.innerHTML='<div class="text-t2 text-xs p-2">No matches found</div>';drop.style.display='block';return;}
   drop.innerHTML=results.map(function(a){
     var pr=prOf(a.id);var prStr=pr?'$'+fp(pr):'';
-    return'<div class="flex justify-between items-center px-2 py-1 hover:bg-s3 cursor-pointer" style="font-size:11px" onmousedown="mtSelectAsset(\''+a.id+'\',\''+a.sym+'\',\''+a.name.replace(/'/g,"\\'")+'\')">'+
-      '<div><span class="font-bold text-t1">'+a.sym+'</span> <span class="text-t2">'+a.name+'</span></div>'+
+    return'<div class="flex justify-between items-center px-2 py-1.5 cursor-pointer" style="font-size:11px;border-bottom:1px solid var(--bd)" onmousedown="event.preventDefault();mtSelectAsset(\''+a.id+'\',\''+a.sym+'\',\''+a.name.replace(/'/g,"\\'")+'\')">'+
+      '<div><span class="font-bold text-t1">'+a.sym+'</span> <span class="text-t2" style="font-size:10px">'+a.name+'</span></div>'+
       '<div class="flex items-center gap-2"><span class="text-t1 font-bold">'+prStr+'</span><span class="text-t2" style="font-size:8px;background:var(--s3);padding:1px 4px;border-radius:3px">'+a.tag+'</span></div></div>'}).join('');
   drop.style.display='block';
+  }catch(e){console.error('mtSearchFilter error:',e);}
 };
 
 window.mtSelectAsset=function(id,sym,name){
