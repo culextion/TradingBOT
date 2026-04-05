@@ -309,11 +309,11 @@ select.inp{appearance:auto}
 </div>
 
 <!-- PAGE: BOT -->
-<div id="page-bot" autocomplete="off" class="h-full overflow-y-auto p-3" style="display:none">
-<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto auto auto;height:calc(100vh - 72px)">
+<div id="page-bot" autocomplete="off" class="h-full overflow-y-auto p-2" style="display:none">
+<div class="grid gap-2" style="grid-template-columns:250px 1fr 1fr;grid-auto-rows:min-content;height:calc(100vh - 72px)">
 
   <!-- Bot Control (left sidebar, spans all rows) -->
-  <div class="panel" style="grid-row:1/9;overflow-y:auto">
+  <div class="panel" style="grid-row:1/20;overflow-y:auto;max-height:calc(100vh - 80px)">
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
       <!-- Account Switcher (Batch 6 Task 1) -->
@@ -469,161 +469,121 @@ select.inp{appearance:auto}
     </div>
   </div>
 
-  <!-- Allocation + Per-Asset P&L row -->
-  <div class="panel">
-    <div class="ph">
+  <!-- Row: Allocation (compact) + P&L by Asset + Risk Analytics -->
+  <div class="panel" style="max-height:160px">
+    <div class="ph" style="padding:3px 8px;min-height:24px">
       <div class="flex gap-1">
-        <button class="tf on alloc-tab" onclick="showAllocView('alloc',this)">Allocation</button>
-        <button class="tf alloc-tab" onclick="showAllocView('rebalance',this)">Rebalance</button>
+        <button class="tf on alloc-tab" onclick="showAllocView('alloc',this)" style="font-size:9px;padding:1px 5px">Allocation</button>
+        <button class="tf alloc-tab" onclick="showAllocView('rebalance',this)" style="font-size:9px;padding:1px 5px">Rebalance</button>
       </div>
     </div>
     <div class="pb p-2 overflow-y-auto" style="position:relative">
-      <div id="alloc-chart"><div class="flex items-center justify-center h-full text-t2 text-xs py-4">Start trading to see allocation</div></div>
+      <div id="alloc-chart"><div class="text-t2 text-xs text-center py-2">Start trading</div></div>
       <div id="rebalance-panel" style="display:none">
-        <div class="text-t2 text-xs font-bold uppercase mb-2">Target Allocation</div>
-        <div id="rebal-targets" class="mb-2"></div>
-        <div class="flex gap-2 mb-3">
-          <select id="rebal-add-asset" class="inp" style="flex:1;font-size:10px"></select>
-          <input id="rebal-add-pct" class="inp" type="number" placeholder="%" min="0" max="100" style="width:50px;font-size:10px"/>
-          <button class="btn btn-b" onclick="addRebalTarget()" style="font-size:10px;padding:3px 8px">Add</button>
+        <div class="text-t2 text-xs font-bold uppercase mb-1">Target Allocation</div>
+        <div id="rebal-targets" class="mb-1"></div>
+        <div class="flex gap-2 mb-2">
+          <select id="rebal-add-asset" class="inp" style="flex:1;font-size:9px"></select>
+          <input id="rebal-add-pct" class="inp" type="number" placeholder="%" min="0" max="100" style="width:40px;font-size:9px"/>
+          <button class="btn btn-b" onclick="addRebalTarget()" style="font-size:9px;padding:2px 6px">Add</button>
         </div>
-        <div class="text-t2 text-xs font-bold uppercase mb-1">Current vs Target</div>
-        <div id="rebal-comparison" class="mb-2"><div class="text-t2 text-xs text-center">Set targets above</div></div>
-        <div class="text-t2 text-xs font-bold uppercase mb-1">Suggested Trades</div>
-        <div id="rebal-suggestions" class="mb-2"><div class="text-t2 text-xs text-center">Set targets to see suggestions</div></div>
-        <button id="rebal-auto-btn" class="btn btn-b w-full" onclick="autoRebalance()" style="font-size:11px;display:none">Auto-Rebalance All</button>
+        <div id="rebal-comparison" class="mb-1"></div>
+        <div id="rebal-suggestions" class="mb-1"></div>
+        <button id="rebal-auto-btn" class="btn btn-b w-full" onclick="autoRebalance()" style="font-size:10px;display:none">Auto-Rebalance All</button>
       </div>
     </div>
   </div>
-  <div class="panel">
-    <div class="ph"><span>P&L by Asset</span></div>
-    <div class="pb p-2 overflow-y-auto" id="asset-pnl"><div class="text-t2 text-xs text-center py-4">No trades yet</div></div>
+  <div class="panel" style="max-height:160px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>P&L by Asset</span></div>
+    <div class="pb p-2 overflow-y-auto" id="asset-pnl"><div class="text-t2 text-xs text-center py-2">No trades yet</div></div>
   </div>
 
-  <!-- Equity / Benchmark / Drawdown (tabbed, middle-left) -->
-  <div class="panel">
-    <div class="ph">
+  <!-- Row: Equity Chart + Open Positions (these get the most space) -->
+  <div class="panel" style="min-height:200px">
+    <div class="ph" style="padding:3px 8px;min-height:24px">
       <div class="flex gap-1">
-        <button class="tf on eq-tab" onclick="showEqView('equity',this)">Equity</button>
-        <button class="tf eq-tab" onclick="showEqView('benchmark',this)">vs Benchmark</button>
-        <button class="tf eq-tab" onclick="showEqView('drawdown',this)">Drawdown</button>
+        <button class="tf on eq-tab" onclick="showEqView('equity',this)" style="font-size:9px;padding:1px 5px">Equity</button>
+        <button class="tf eq-tab" onclick="showEqView('benchmark',this)" style="font-size:9px;padding:1px 5px">vs Benchmark</button>
+        <button class="tf eq-tab" onclick="showEqView('drawdown',this)" style="font-size:9px;padding:1px 5px">Drawdown</button>
       </div>
     </div>
-    <div class="pb" style="min-height:180px;position:relative">
+    <div class="pb" style="min-height:170px;position:relative">
       <div id="equity-chart" style="width:100%;height:100%;position:absolute;inset:0"><div class="flex items-center justify-center h-full text-t2 text-xs">Start bot to track equity</div></div>
-      <div id="benchmark-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data for benchmark</div></div>
-      <div id="drawdown-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data for drawdown</div></div>
+      <div id="benchmark-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data</div></div>
+      <div id="drawdown-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data</div></div>
     </div>
   </div>
-
-  <!-- Open Positions (middle-right) -->
-  <div class="panel">
-    <div class="ph"><span>Open Positions</span></div>
+  <div class="panel" style="min-height:200px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Open Positions</span></div>
     <div class="pb p-2 overflow-y-auto" id="pos-list"><div class="text-t2 text-xs text-center py-4">No open positions</div></div>
   </div>
 
-  <!-- Next Projected Moves + Signals (bottom-left) -->
-  <div class="panel" style="min-height:0">
-    <div class="ph"><span>Signals & Next Moves</span></div>
+  <!-- Row: Signals + Risk Analytics side by side -->
+  <div class="panel" style="max-height:180px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Signals & Next Moves</span></div>
     <div class="pb p-2 overflow-y-auto" id="next-moves"><div class="text-t2 text-xs text-center py-2">Bot is monitoring...</div></div>
   </div>
-
-  <!-- Key Levels Panel (Task 1) -->
-  <div class="panel" style="grid-column:2/3">
-    <div class="ph"><span>Key Levels</span><span id="levels-status" class="text-t2" style="font-size:9px">Loading...</span></div>
-    <div class="pb p-2 overflow-y-auto" id="key-levels"><div class="text-t2 text-xs text-center py-2">Calculating support/resistance...</div></div>
+  <div class="panel" style="max-height:180px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Risk Analytics</span><span class="text-ylw pulse" style="font-size:9px;margin-left:6px">LIVE</span></div>
+    <div class="pb p-2 overflow-y-auto" id="risk-analytics"><div class="text-t2 text-xs text-center py-2">Start trading to see risk</div></div>
   </div>
 
-  <!-- Risk Analytics (Batch 6 Task 3) -->
-  <div class="panel" style="grid-column:3/4">
-    <div class="ph"><span>Risk Analytics</span><span class="text-ylw pulse" style="font-size:9px">LIVE</span></div>
-    <div class="pb p-2 overflow-y-auto" id="risk-analytics"><div class="text-t2 text-xs text-center py-2">Start trading to see risk metrics</div></div>
+  <!-- Row: Key Levels + Trade History -->
+  <div class="panel" style="max-height:160px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Key Levels</span><span id="levels-status" class="text-t2" style="font-size:9px;margin-left:6px">Loading...</span></div>
+    <div class="pb p-2 overflow-y-auto" id="key-levels"><div class="text-t2 text-xs text-center py-2">Calculating...</div></div>
   </div>
-
-  <!-- Price Alerts Panel (Task 3) -->
-  <div class="panel" style="grid-column:2/3">
-    <div class="ph"><span>Price Alerts</span><span id="alerts-count" class="text-t2" style="font-size:9px">0 active</span></div>
+  <div class="panel" style="max-height:220px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Trade History</span></div>
     <div class="pb p-2 overflow-y-auto">
-      <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
-        <div style="flex:1;min-width:100px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
-          <select id="alert-asset" class="inp" style="font-size:11px"></select>
-        </div>
-        <div style="width:90px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Direction</label>
-          <select id="alert-dir" class="inp" style="font-size:11px">
-            <option value="above">Above</option>
-            <option value="below">Below</option>
-          </select>
-        </div>
-        <div style="width:110px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Price ($)</label>
-          <input id="alert-price" class="inp" type="number" placeholder="70000" step="any" style="font-size:11px"/>
-        </div>
-        <button class="btn btn-b" onclick="addPriceAlert()" style="padding:5px 12px;font-size:11px">Set Alert</button>
-      </div>
-      <div id="alerts-list"><div class="text-t2 text-xs text-center py-1">No alerts set</div></div>
-    </div>
-  </div>
-
-  <!-- Pending Orders (Batch 6 Task 2) -->
-  <div class="panel" style="grid-column:3/4;min-height:0">
-    <div class="ph"><span>Pending Orders</span><span id="orders-count" class="text-t2" style="font-size:9px">0 pending</span></div>
-    <div class="pb p-2 overflow-y-auto">
-      <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
-        <div style="flex:1;min-width:100px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
-          <select id="order-asset" class="inp" style="font-size:11px"></select>
-        </div>
-        <div style="width:90px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Type</label>
-          <select id="order-type" class="inp" style="font-size:11px">
-            <option value="limit_buy">Limit Buy</option>
-            <option value="limit_sell">Limit Sell</option>
-            <option value="stop_buy">Stop Buy</option>
-            <option value="stop_sell">Stop Sell</option>
-          </select>
-        </div>
-        <div style="width:90px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Price ($)</label>
-          <input id="order-price" class="inp" type="number" placeholder="70000" step="any" style="font-size:11px"/>
-        </div>
-        <div style="width:80px">
-          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Amount ($)</label>
-          <input id="order-amount" class="inp" type="number" placeholder="1000" step="any" style="font-size:11px" value="1000"/>
-        </div>
-        <button class="btn btn-b" onclick="placeLimitOrder()" style="padding:5px 12px;font-size:11px">Place</button>
-      </div>
-      <div id="orders-list"><div class="text-t2 text-xs text-center py-1">No pending orders</div></div>
-    </div>
-  </div>
-
-  <!-- Trade History (bottom-right) -->
-  <div class="panel" style="min-height:0">
-    <div class="ph"><span>Trade History</span></div>
-    <div class="pb p-2 overflow-y-auto">
-      <div class="flex gap-1 mb-2" id="trade-filters">
-        <button class="tf on trade-filter" onclick="filterTrades('all',this)">All</button>
-        <button class="tf trade-filter" onclick="filterTrades('BUY',this)">Buys</button>
-        <button class="tf trade-filter" onclick="filterTrades('SELL',this)">Sells</button>
-        <button class="tf trade-filter" onclick="filterTrades('wins',this)">Wins</button>
-        <button class="tf trade-filter" onclick="filterTrades('losses',this)">Losses</button>
+      <div class="flex gap-1 mb-1" id="trade-filters">
+        <button class="tf on trade-filter" onclick="filterTrades('all',this)" style="font-size:9px;padding:1px 5px">All</button>
+        <button class="tf trade-filter" onclick="filterTrades('BUY',this)" style="font-size:9px;padding:1px 5px">Buys</button>
+        <button class="tf trade-filter" onclick="filterTrades('SELL',this)" style="font-size:9px;padding:1px 5px">Sells</button>
+        <button class="tf trade-filter" onclick="filterTrades('wins',this)" style="font-size:9px;padding:1px 5px">Wins</button>
+        <button class="tf trade-filter" onclick="filterTrades('losses',this)" style="font-size:9px;padding:1px 5px">Losses</button>
       </div>
       <div id="trade-log"><div class="text-t2 text-xs text-center py-2">No trades yet</div></div>
     </div>
   </div>
 
-  <!-- AI Trade Summary (Batch 7 Task 3) -->
-  <div class="panel" style="grid-column:2/4" id="ai-summary-panel">
-    <div class="ph"><span>AI Summary</span><span class="text-t2" style="font-size:9px" id="ai-summary-time"></span></div>
-    <div class="pb p-2" id="ai-summary" style="font-size:11px;line-height:1.5;background:linear-gradient(135deg,rgba(88,166,255,.04),rgba(188,140,255,.04));border-radius:0 0 8px 8px">
-      <div class="text-t2 text-xs text-center">Start the bot to see AI-generated summaries</div>
+  <!-- Row: Price Alerts + Pending Orders (compact) -->
+  <div class="panel" style="max-height:140px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Price Alerts</span><span id="alerts-count" class="text-t2" style="font-size:9px;margin-left:6px">0 active</span></div>
+    <div class="pb p-2 overflow-y-auto">
+      <div style="display:flex;gap:4px;align-items:flex-end;margin-bottom:4px">
+        <select id="alert-asset" class="inp" style="font-size:10px;flex:1"></select>
+        <select id="alert-dir" class="inp" style="font-size:10px;width:70px"><option value="above">Above</option><option value="below">Below</option></select>
+        <input id="alert-price" class="inp" type="number" placeholder="70000" step="any" style="font-size:10px;width:80px"/>
+        <button class="btn btn-b" onclick="addPriceAlert()" style="padding:3px 8px;font-size:10px">Set</button>
+      </div>
+      <div id="alerts-list"><div class="text-t2 text-xs text-center py-1">No alerts</div></div>
     </div>
   </div>
-  <!-- Bot Activity Log (full width bottom, Batch 6: spans correctly) -->
-  <div class="panel" style="grid-column:2/4;max-height:140px">
-    <div class="ph"><span>Bot Activity Log</span></div>
-    <div class="pb p-2 overflow-y-auto" id="bot-log" style="font-family:'SF Mono','Fira Code',monospace;font-size:11px"><div class="text-t2 text-xs text-center">Start the bot to see activity here</div></div>
+  <div class="panel" style="max-height:140px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Pending Orders</span><span id="orders-count" class="text-t2" style="font-size:9px;margin-left:6px">0 pending</span></div>
+    <div class="pb p-2 overflow-y-auto">
+      <div style="display:flex;gap:4px;align-items:flex-end;margin-bottom:4px">
+        <select id="order-asset" class="inp" style="font-size:10px;flex:1"></select>
+        <select id="order-type" class="inp" style="font-size:10px;width:80px"><option value="limit_buy">Limit Buy</option><option value="limit_sell">Limit Sell</option><option value="stop_buy">Stop Buy</option><option value="stop_sell">Stop Sell</option></select>
+        <input id="order-price" class="inp" type="number" placeholder="Price" step="any" style="font-size:10px;width:70px"/>
+        <input id="order-amount" class="inp" type="number" placeholder="Amt" step="any" style="font-size:10px;width:60px" value="1000"/>
+        <button class="btn btn-b" onclick="placeLimitOrder()" style="padding:3px 8px;font-size:10px">Place</button>
+      </div>
+      <div id="orders-list"><div class="text-t2 text-xs text-center py-1">No orders</div></div>
+    </div>
+  </div>
+
+  <!-- AI Summary + Bot Log (full width, compact) -->
+  <div class="panel" style="grid-column:2/4;max-height:80px" id="ai-summary-panel">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>AI Summary</span><span class="text-t2" style="font-size:9px;margin-left:6px" id="ai-summary-time"></span></div>
+    <div class="pb p-2" id="ai-summary" style="font-size:10px;line-height:1.4;background:linear-gradient(135deg,rgba(88,166,255,.04),rgba(188,140,255,.04));border-radius:0 0 8px 8px">
+      <div class="text-t2 text-xs text-center">Start bot for AI summaries</div>
+    </div>
+  </div>
+  <div class="panel" style="grid-column:2/4;max-height:120px">
+    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Bot Activity Log</span></div>
+    <div class="pb p-2 overflow-y-auto" id="bot-log" style="font-family:'SF Mono','Fira Code',monospace;font-size:10px"><div class="text-t2 text-xs text-center">Start bot for activity log</div></div>
   </div>
 </div>
 </div>
