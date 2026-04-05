@@ -55,6 +55,7 @@ select.inp{appearance:auto}
 .toast-buy{background:rgba(63,185,80,.92);border-left:3px solid #2ea043}
 .toast-sell{background:rgba(248,81,73,.92);border-left:3px solid #da3633}
 .toast-warn{background:rgba(210,153,34,.92);border-left:3px solid #9a6700}
+.toast-info{background:rgba(88,166,255,.92);border-left:3px solid #0969da}
 @keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 @keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
 /* Sparkline in position cards (Task 4b) */
@@ -154,10 +155,10 @@ select.inp{appearance:auto}
 
 <!-- PAGE: BOT -->
 <div id="page-bot" class="h-full overflow-y-auto p-3" style="display:none">
-<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto;height:calc(100vh - 72px)">
+<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto auto;height:calc(100vh - 72px)">
 
   <!-- Bot Control (left sidebar, spans all rows) -->
-  <div class="panel" style="grid-row:1/6;overflow-y:auto">
+  <div class="panel" style="grid-row:1/8;overflow-y:auto">
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
@@ -319,6 +320,38 @@ select.inp{appearance:auto}
     <div class="pb p-2 overflow-y-auto" id="next-moves"><div class="text-t2 text-xs text-center py-2">Bot is monitoring...</div></div>
   </div>
 
+  <!-- Key Levels Panel (Task 1) -->
+  <div class="panel" style="grid-column:2/3">
+    <div class="ph"><span>Key Levels</span><span id="levels-status" class="text-t2" style="font-size:9px">Loading...</span></div>
+    <div class="pb p-2 overflow-y-auto" id="key-levels"><div class="text-t2 text-xs text-center py-2">Calculating support/resistance...</div></div>
+  </div>
+
+  <!-- Price Alerts Panel (Task 3) -->
+  <div class="panel" style="grid-column:3/4">
+    <div class="ph"><span>Price Alerts</span><span id="alerts-count" class="text-t2" style="font-size:9px">0 active</span></div>
+    <div class="pb p-2 overflow-y-auto">
+      <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
+        <div style="flex:1;min-width:100px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
+          <select id="alert-asset" class="inp" style="font-size:11px"></select>
+        </div>
+        <div style="width:90px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Direction</label>
+          <select id="alert-dir" class="inp" style="font-size:11px">
+            <option value="above">Above</option>
+            <option value="below">Below</option>
+          </select>
+        </div>
+        <div style="width:110px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Price ($)</label>
+          <input id="alert-price" class="inp" type="number" placeholder="70000" step="any" style="font-size:11px"/>
+        </div>
+        <button class="btn btn-b" onclick="addPriceAlert()" style="padding:5px 12px;font-size:11px">Set Alert</button>
+      </div>
+      <div id="alerts-list"><div class="text-t2 text-xs text-center py-1">No alerts set</div></div>
+    </div>
+  </div>
+
   <!-- Trade History (bottom-right) -->
   <div class="panel" style="min-height:0">
     <div class="ph"><span>Trade History</span></div>
@@ -366,6 +399,11 @@ select.inp{appearance:auto}
       <div id="sim-out"></div>
       <div id="sim-chart" style="height:200px;display:none"></div>
     </div>
+  </div>
+  <!-- Historical Context (Batch 3 Task 4) -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Historical Context</span><span id="hist-status" class="text-t2" style="font-size:9px">Loading from Supabase...</span></div>
+    <div class="pb p-4" id="c-hist-context"><div class="text-t2 text-xs text-center py-4">Loading historical data from Supabase...</div></div>
   </div>
   <!-- Performance Analytics (Task 2) -->
   <div class="panel col-span-2">
@@ -599,7 +637,7 @@ var wl=[];// custom watchlist
 var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
 var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
   cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
-  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0}, // Task 3b
+  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0}, // Task 3b + Batch 3
   consecutiveLosses:0,                                   // Task 3d
   pausedUntil:0                                          // Task 3d
 };
@@ -798,6 +836,8 @@ function handleFhMessage(data,type){
       updateTicker();updateWL();updateHdr();updateCorr();if(typeof mtUpdatePreview==='function')mtUpdatePreview();
       // Update price displays on all chart tiles
       Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,tileAsset[k])});
+      // Check price alerts (Batch 3 Task 3)
+      checkPriceAlerts();
     }
   }catch(ex){}
 }
@@ -910,6 +950,7 @@ function loadAll(){
       fhAllQuotes(getWL()).then(function(){
         ConnGuard.onPriceUpdate();
         updateTicker();updateWL();updatePulse();updateHdr();updateCorr();
+        checkPriceAlerts();
       }).catch(function(){ConnGuard.onAPIFailure()});
     },15000);
   }).catch(function(e){
@@ -1195,6 +1236,9 @@ function analyzeMarket(){
       var avgVol=d.slice(-24).reduce(function(s,x){return s+(x.volume||0)},0)/24;
       if(recentVol>avgVol*2&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Volume spike '+((recentVol/avgVol).toFixed(1))+'x avg — strong buying pressure',conf:65,strat:'volume'});
     }
+
+    // Pattern recognition (Batch 3 Task 2)
+    detectPatterns(a,d,moves);
   });
 
   // Apply adaptive confidence weights (Task 3b)
@@ -1991,9 +2035,9 @@ window.showPage=function(p,btn){
   ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard')setTimeout(resizeCharts,200);
-  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();
+  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
-  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();}
+  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();}
   if(p==='settings'){
     var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
@@ -2148,6 +2192,370 @@ document.addEventListener('keydown',function(e){
   }
 });
 
+// ===================== SUPPORT/RESISTANCE (Batch 3 Task 1) =====================
+var assetLevels={}; // {assetId: {support:[{price,strength}], resistance:[{price,strength}]}}
+
+async function calcSupportResistance(assetId,symbol){
+  try{
+    var resp=await fetch(SUPABASE_URL+'/rest/v1/asset_daily_stats?asset_id=eq.'+assetId+'&order=date.desc&limit=500',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+    });
+    var data=await resp.json();
+    if(!Array.isArray(data)||data.length<30)return;
+    data.reverse(); // oldest first
+    var window_size=10;
+    var supports=[],resistances=[];
+    // Find local minima (supports) and maxima (resistances)
+    for(var i=window_size;i<data.length-window_size;i++){
+      var low=parseFloat(data[i].low_price),high=parseFloat(data[i].high_price);
+      var isMin=true,isMax=true;
+      for(var j=i-window_size;j<=i+window_size;j++){
+        if(j===i)continue;
+        if(parseFloat(data[j].low_price)<=low)isMin=false;
+        if(parseFloat(data[j].high_price)>=high)isMax=false;
+      }
+      if(isMin)supports.push({price:low,strength:1,date:data[i].date});
+      if(isMax)resistances.push({price:high,strength:1,date:data[i].date});
+    }
+    // Cluster nearby levels within 2%
+    function clusterLevels(levels){
+      if(!levels.length)return[];
+      levels.sort(function(a,b){return a.price-b.price});
+      var clusters=[];
+      var used=new Array(levels.length).fill(false);
+      for(var i=0;i<levels.length;i++){
+        if(used[i])continue;
+        var cluster={price:levels[i].price,strength:levels[i].strength,count:1,lastDate:levels[i].date};
+        used[i]=true;
+        for(var j=i+1;j<levels.length;j++){
+          if(used[j])continue;
+          if(Math.abs(levels[j].price-cluster.price)/cluster.price<0.02){
+            cluster.price=(cluster.price*cluster.count+levels[j].price)/(cluster.count+1);
+            cluster.strength+=levels[j].strength;
+            cluster.count++;
+            if(levels[j].date>cluster.lastDate)cluster.lastDate=levels[j].date;
+            used[j]=true;
+          }
+        }
+        clusters.push(cluster);
+      }
+      clusters.sort(function(a,b){return b.strength-a.strength});
+      return clusters.slice(0,5);
+    }
+    var topSupp=clusterLevels(supports);
+    var topRes=clusterLevels(resistances);
+    assetLevels[assetId]={support:topSupp,resistance:topRes};
+    // Upsert to price_levels table
+    var rows=[];
+    topSupp.forEach(function(s){rows.push({asset_id:assetId,symbol:symbol,level_type:'support',price:Math.round(s.price*100)/100,strength:s.strength,last_tested:s.lastDate});});
+    topRes.forEach(function(r){rows.push({asset_id:assetId,symbol:symbol,level_type:'resistance',price:Math.round(r.price*100)/100,strength:r.strength,last_tested:r.lastDate});});
+    if(rows.length){
+      fetch(SUPABASE_URL+'/rest/v1/price_levels',{
+        method:'POST',
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify(rows)
+      });
+    }
+  }catch(e){console.warn('S/R calc failed for '+symbol,e);}
+}
+
+function loadAllSupportResistance(){
+  var wla=getWL().filter(function(a){return mkt==='crypto'});
+  var idx=0;
+  function next(){
+    if(idx>=wla.length){renderKeyLevels();var st=document.getElementById('levels-status');if(st)st.textContent=wla.length+' assets';return;}
+    calcSupportResistance(wla[idx].id,wla[idx].sym).then(function(){idx++;setTimeout(next,200)}).catch(function(){idx++;setTimeout(next,200)});
+  }
+  next();
+}
+
+function renderKeyLevels(){
+  var el=document.getElementById('key-levels');if(!el)return;
+  var keys=Object.keys(assetLevels);
+  if(!keys.length){el.innerHTML='<div class="text-t2 text-xs text-center py-2">No level data yet</div>';return;}
+  var h='';
+  keys.forEach(function(id){
+    var lv=assetLevels[id];var a=findA(id);if(!a)return;
+    var pr=prOf(id);
+    h+='<div style="margin-bottom:6px"><div class="font-bold text-t1" style="font-size:11px">'+a.sym+'</div>';
+    // Show nearest support and resistance
+    var nearSupp=null,nearRes=null;
+    if(lv.support.length){
+      var below=lv.support.filter(function(s){return s.price<pr}).sort(function(a,b){return b.price-a.price});
+      nearSupp=below[0]||lv.support[0];
+    }
+    if(lv.resistance.length){
+      var above=lv.resistance.filter(function(r){return r.price>pr}).sort(function(a,b){return a.price-b.price});
+      nearRes=above[0]||lv.resistance[0];
+    }
+    if(nearSupp)h+='<div class="flex justify-between" style="font-size:10px"><span class="text-grn">S: $'+fp(nearSupp.price)+'</span><span class="text-t2">str '+nearSupp.strength+'</span></div>';
+    if(nearRes)h+='<div class="flex justify-between" style="font-size:10px"><span class="text-red">R: $'+fp(nearRes.price)+'</span><span class="text-t2">str '+nearRes.strength+'</span></div>';
+    // Distance from price
+    if(nearSupp&&pr){var distS=((pr-nearSupp.price)/pr*100).toFixed(1);h+='<div class="text-t2" style="font-size:9px">'+distS+'% above support</div>';}
+    h+='</div>';
+  });
+  el.innerHTML=h;
+}
+
+// ===================== PATTERN RECOGNITION (Batch 3 Task 2) =====================
+function detectPatterns(a,d,moves){
+  if(!d||d.length<30)return;
+  var pr=d[d.length-1].close;
+  var hasPos=account.positions.find(function(p){return p.id===a.id});
+  var lv=assetLevels[a.id];
+
+  // --- Levels strategy signals (Task 1 integration) ---
+  if(lv){
+    // Buy near strong support
+    if(lv.support&&lv.support.length){
+      for(var si=0;si<lv.support.length;si++){
+        var sup=lv.support[si];
+        var distPct=Math.abs(pr-sup.price)/pr*100;
+        if(distPct<2&&pr>=sup.price*0.98&&!hasPos){
+          moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Price near strong support $'+fp(sup.price)+' (strength '+sup.strength+', '+distPct.toFixed(1)+'% away)',conf:Math.min(82,60+sup.strength*4),strat:'levels'});
+          break;
+        }
+      }
+    }
+    // Sell near strong resistance
+    if(lv.resistance&&lv.resistance.length&&hasPos){
+      for(var ri=0;ri<lv.resistance.length;ri++){
+        var res=lv.resistance[ri];
+        var distPctR=Math.abs(res.price-pr)/pr*100;
+        if(distPctR<2&&pr<=res.price*1.02){
+          moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Price near strong resistance $'+fp(res.price)+' (strength '+res.strength+', '+distPctR.toFixed(1)+'% away)',conf:Math.min(80,58+res.strength*4),strat:'levels'});
+          break;
+        }
+      }
+    }
+  }
+
+  // --- Double Bottom Pattern ---
+  if(d.length>=30&&lv&&lv.support&&lv.support.length){
+    var recent30=d.slice(-30);
+    var lows=[];
+    for(var i=2;i<recent30.length-2;i++){
+      if(recent30[i].low<recent30[i-1].low&&recent30[i].low<recent30[i-2].low&&recent30[i].low<recent30[i+1].low&&recent30[i].low<recent30[i+2].low){
+        lows.push({idx:i,price:recent30[i].low});
+      }
+    }
+    if(lows.length>=2){
+      var l1=lows[lows.length-2],l2=lows[lows.length-1];
+      var pctDiff=Math.abs(l1.price-l2.price)/l1.price*100;
+      if(pctDiff<3&&l2.idx-l1.idx>=5&&!hasPos){
+        moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Double bottom detected at ~$'+fp((l1.price+l2.price)/2)+' — price tested support twice and bounced',conf:75,strat:'pattern'});
+      }
+    }
+  }
+
+  // --- Breakout Detection ---
+  if(lv&&lv.resistance&&lv.resistance.length&&d.length>=24){
+    var highestRes=lv.resistance.reduce(function(mx,r){return r.price>mx.price?r:mx},lv.resistance[0]);
+    if(pr>highestRes.price){
+      var avgVol=d.slice(-24).reduce(function(s,x){return s+(x.volume||0)},0)/24;
+      var curVol=d[d.length-1].volume||0;
+      if(curVol>avgVol*1.2&&!hasPos){
+        moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Breakout above resistance $'+fp(highestRes.price)+' with '+(avgVol>0?(curVol/avgVol).toFixed(1)+'x':'high')+' volume',conf:80,strat:'pattern'});
+      }
+    }
+  }
+
+  // --- Volume Divergence (bullish) ---
+  if(d.length>=20){
+    var last10=d.slice(-10),prev10=d.slice(-20,-10);
+    var last10Low=Math.min.apply(null,last10.map(function(x){return x.low}));
+    var prev10Low=Math.min.apply(null,prev10.map(function(x){return x.low}));
+    var last10AvgVol=last10.reduce(function(s,x){return s+(x.volume||0)},0)/10;
+    var prev10AvgVol=prev10.reduce(function(s,x){return s+(x.volume||0)},0)/10;
+    if(last10Low<prev10Low&&last10AvgVol<prev10AvgVol*0.8&&!hasPos){
+      moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Bullish volume divergence — price making new lows but volume decreasing (selling exhaustion)',conf:70,strat:'pattern'});
+    }
+  }
+
+  // --- Moving Average Ribbon ---
+  if(d.length>=100){
+    var s20=sma(d,20),s50=sma(d,50),s100=0;
+    for(var k=d.length-100;k<d.length;k++)s100+=d[k].close;
+    s100/=100;
+    if(s20>s50&&s50>s100&&pr>s20&&!hasPos){
+      // Check all trending up: SMA20 slope positive
+      var s20_5ago=0;for(var k=d.length-25;k<d.length-5;k++)s20_5ago+=d[k].close;s20_5ago/=20;
+      if(s20>s20_5ago){
+        moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'MA Ribbon bullish — SMA20 ($'+fp(s20)+') > SMA50 ($'+fp(s50)+') > SMA100 ($'+fp(s100)+'), all trending up',conf:72,strat:'momentum'});
+      }
+    }
+  }
+}
+
+// ===================== PRICE ALERTS (Batch 3 Task 3) =====================
+var priceAlerts=[];
+var _alertBeep=null;
+try{_alertBeep=new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoaFi42Kend0hZmqp5x2Ry5He3+EiYqJiH14dIKVpaaflHRALFR7go2Oi4qIg395c4SYpqOalYNxR0BchYeNjYyLiYSDfnuEl6Shn5aLfGVJT3uIjI2NjYuJhoJ9fYiaoZ+al5KKgXBaUHOCi42NjYyKiIWBfYCNnZ+cmpWPh39wYFh0g4uNjYyLiomGg3+Aj5ydnJqXko2FfnFiW3eDi42MjIuKiYeDf4GRnJycmpaRi4R8cGRce4KLjY2Mi4qIhYGAg5OcnJuZlpGLhH1xZV17g4uNjYyLioiFgoCElJycm5mVkIqDfHFmXnuDi42NjIuKiIWBgYWVnJybmZWQioN8cWdee4OLjY2Mi4qIhYGBhpWcnJuZlZCKg3xwZ197g4uNjYyLioiFgoGHlpycm5mVkImDfHBoYHyDi42NjIuKiIaC');}catch(e){}
+
+function loadPriceAlerts(){
+  try{var s=localStorage.getItem('ct_priceAlerts');if(s)priceAlerts=JSON.parse(s);}catch(e){}
+}
+function savePriceAlerts(){
+  try{localStorage.setItem('ct_priceAlerts',JSON.stringify(priceAlerts));}catch(e){}
+}
+
+window.addPriceAlert=function(){
+  var assetId=gv('alert-asset');if(!assetId)return;
+  var dir=gv('alert-dir');
+  var price=parseFloat(gv('alert-price'));if(!price||price<=0){alert('Enter a valid price');return;}
+  var a=findA(assetId);if(!a)return;
+  priceAlerts.push({id:Date.now(),asset:assetId,sym:a.sym,direction:dir,price:price,triggered:false});
+  savePriceAlerts();
+  renderAlerts();
+  showToast('Alert set: '+a.sym+' '+dir+' $'+fp(price),'info');
+  document.getElementById('alert-price').value='';
+};
+
+window.removePriceAlert=function(id){
+  priceAlerts=priceAlerts.filter(function(a){return a.id!==id});
+  savePriceAlerts();
+  renderAlerts();
+};
+
+function checkPriceAlerts(){
+  var changed=false;
+  priceAlerts.forEach(function(alert){
+    if(alert.triggered)return;
+    var pr=prOf(alert.asset);if(!pr)return;
+    var fire=false;
+    if(alert.direction==='above'&&pr>=alert.price)fire=true;
+    if(alert.direction==='below'&&pr<=alert.price)fire=true;
+    if(fire){
+      alert.triggered=true;changed=true;
+      showToast('ALERT: '+alert.sym+' crossed '+alert.direction+' $'+fp(alert.price)+' (now $'+fp(pr)+')','warn');
+      if(_alertBeep){try{_alertBeep.currentTime=0;_alertBeep.play();}catch(e){}}
+    }
+  });
+  if(changed){savePriceAlerts();renderAlerts();}
+}
+
+function renderAlerts(){
+  var el=document.getElementById('alerts-list');if(!el)return;
+  var ce=document.getElementById('alerts-count');
+  var active=priceAlerts.filter(function(a){return!a.triggered}).length;
+  if(ce)ce.textContent=active+' active';
+  if(!priceAlerts.length){el.innerHTML='<div class="text-t2 text-xs text-center py-1">No alerts set</div>';return;}
+  el.innerHTML=priceAlerts.map(function(a){
+    var pr=prOf(a.asset);var distPct=pr?((a.price-pr)/pr*100).toFixed(1):'--';
+    return'<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:var(--s2);border-radius:4px;margin-bottom:3px;border-left:3px solid '+(a.triggered?'var(--ylw)':'var(--blu)')+'">'+
+      '<div style="font-size:10px"><span class="font-bold text-t1">'+a.sym+'</span> <span class="text-t2">'+a.direction+'</span> <span class="font-bold">$'+fp(a.price)+'</span>'+
+      (a.triggered?' <span class="text-ylw font-bold">TRIGGERED</span>':' <span class="text-t2">('+distPct+'%)</span>')+
+      '</div><button class="btn" onclick="removePriceAlert('+a.id+')" style="background:none;color:var(--red);padding:2px 6px;font-size:10px">&times;</button></div>';
+  }).join('');
+}
+
+function populateAlertAssets(){
+  var sel=document.getElementById('alert-asset');if(!sel)return;
+  var wla=getWL();
+  sel.innerHTML=wla.map(function(a){return'<option value="'+a.id+'">'+a.sym+'</option>'}).join('');
+}
+
+// ===================== HISTORICAL CONTEXT (Batch 3 Task 4) =====================
+var histData={}; // {assetId: [{date,open,high,low,close,volume},...]}
+
+async function fetchHistorical(assetId){
+  try{
+    var resp=await fetch(SUPABASE_URL+'/rest/v1/asset_daily_stats?asset_id=eq.'+assetId+'&order=date.desc&limit=500',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+    });
+    var data=await resp.json();
+    if(Array.isArray(data)&&data.length)histData[assetId]=data.reverse();
+  }catch(e){}
+}
+
+function renderHistoricalContext(){
+  var el=document.getElementById('c-hist-context');if(!el)return;
+  var stEl=document.getElementById('hist-status');
+  var wla=getWL().filter(function(a){return mkt==='crypto'&&histData[a.id]&&histData[a.id].length>30});
+  if(!wla.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Loading historical data from Supabase... (crypto assets only)</div>';return;}
+  if(stEl)stEl.textContent=wla.length+' assets loaded';
+  var h='<div class="grid grid-cols-2 gap-3">';
+  wla.forEach(function(a){
+    var data=histData[a.id];if(!data||data.length<30)return;
+    var pr=prOf(a.id)||parseFloat(data[data.length-1].close_price);
+    var closes=data.map(function(d){return parseFloat(d.close_price)});
+    var highs=data.map(function(d){return parseFloat(d.high_price)});
+    var lows=data.map(function(d){return parseFloat(d.low_price)});
+
+    // 52-week (365-day) high/low
+    var y1Data=data.slice(-365);
+    var y1Closes=y1Data.map(function(d){return parseFloat(d.close_price)});
+    var y1Highs=y1Data.map(function(d){return parseFloat(d.high_price)});
+    var w52High=Math.max.apply(null,y1Highs);
+    var w52Low=Math.min.apply(null,y1Data.map(function(d){return parseFloat(d.low_price)}));
+    var w52Range=w52High-w52Low;
+    var w52Pct=w52Range>0?((pr-w52Low)/w52Range*100):50;
+
+    // All-time high from data
+    var ath=Math.max.apply(null,highs);
+    var distATH=ath>0?((ath-pr)/ath*100):0;
+
+    // Historical volatility (30-day and 90-day)
+    function calcVol(cls,n){
+      if(cls.length<n+1)return 0;
+      var recent=cls.slice(-n-1);
+      var rets=[];
+      for(var i=1;i<recent.length;i++){if(recent[i-1]>0)rets.push(Math.log(recent[i]/recent[i-1]));}
+      if(!rets.length)return 0;
+      var mean=rets.reduce(function(a,b){return a+b},0)/rets.length;
+      var variance=rets.reduce(function(a,b){return a+Math.pow(b-mean,2)},0)/rets.length;
+      return Math.sqrt(variance*365)*100;
+    }
+    var vol30=calcVol(closes,30);
+    var vol90=calcVol(closes,90);
+
+    // Seasonal pattern: avg return for current month across years
+    var curMonth=new Date().getMonth()+1;
+    var monthReturns=[];
+    for(var i=1;i<data.length;i++){
+      var dParts=data[i].date.split('-');
+      if(parseInt(dParts[1])===curMonth){
+        var ret=(parseFloat(data[i].close_price)-parseFloat(data[i-1].close_price))/parseFloat(data[i-1].close_price)*100;
+        monthReturns.push(ret);
+      }
+    }
+    var avgMonthRet=monthReturns.length?monthReturns.reduce(function(a,b){return a+b},0)/monthReturns.length:0;
+    var seasonalBull=avgMonthRet>0;
+
+    h+='<div class="bg-s2 rounded-lg p-3" style="font-size:11px">';
+    h+='<div class="font-bold text-t1 mb-2" style="font-size:13px">'+a.sym+'</div>';
+
+    // 52-week range bar
+    h+='<div class="mb-2"><div class="text-t2 mb-1" style="font-size:9px">52-Week Range</div>';
+    h+='<div class="flex items-center gap-2" style="font-size:10px"><span class="text-red">$'+fp(w52Low)+'</span>';
+    h+='<div class="flex-1 bg-s3 rounded-full" style="height:8px;position:relative"><div class="bg-blu rounded-full" style="height:8px;width:'+Math.max(2,Math.min(98,w52Pct))+'%"></div>';
+    h+='<div style="position:absolute;top:-3px;left:'+Math.max(2,Math.min(96,w52Pct))+'%;width:2px;height:14px;background:var(--t1);border-radius:1px" title="Current: $'+fp(pr)+'"></div></div>';
+    h+='<span class="text-grn">$'+fp(w52High)+'</span></div></div>';
+
+    // ATH distance
+    h+='<div class="flex justify-between mb-1"><span class="text-t2">ATH</span><span class="font-bold">$'+fp(ath)+' <span class="text-red" style="font-size:9px">(-'+distATH.toFixed(1)+'%)</span></span></div>';
+
+    // Volatility
+    h+='<div class="flex justify-between mb-1"><span class="text-t2">Volatility (30d/90d)</span><span class="font-bold '+(vol30>vol90?'text-red':'text-grn')+'">'+vol30.toFixed(1)+'% / '+vol90.toFixed(1)+'%</span></div>';
+
+    // Seasonal
+    var monthNames=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    h+='<div class="flex justify-between"><span class="text-t2">'+monthNames[curMonth]+' Seasonal</span><span class="font-bold '+(seasonalBull?'text-grn':'text-red')+'">'+(avgMonthRet>=0?'+':'')+avgMonthRet.toFixed(2)+'% avg'+(monthReturns.length?' ('+monthReturns.length+' days)':'')+'</span></div>';
+
+    h+='</div>';
+  });
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+async function loadAllHistorical(){
+  var wla=getWL().filter(function(a){return mkt==='crypto'});
+  for(var i=0;i<wla.length;i++){
+    await fetchHistorical(wla[i].id);
+  }
+  renderHistoricalContext();
+}
+
 // ===================== INIT =====================
 ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
@@ -2157,6 +2565,10 @@ onStratChange();
 initTicker();
 loadAll();
 updateDcaTargets();
+loadPriceAlerts();renderAlerts();populateAlertAssets();
+// Batch 3: Load S/R levels and historical context from Supabase (async, non-blocking)
+setTimeout(function(){loadAllSupportResistance();},3000);
+setTimeout(function(){loadAllHistorical();},4000);
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
 setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
 
