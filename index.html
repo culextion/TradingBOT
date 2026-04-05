@@ -5282,6 +5282,8 @@ var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 window.SUPABASE_URL_B9=SUPABASE_URL;window.SUPABASE_ANON_B9=SUPABASE_ANON;
 if(SUPABASE_URL && SUPABASE_ANON) {
   SB.init(SUPABASE_URL, SUPABASE_ANON);
+  // Ensure server bot toggle state is restored after login settles
+  setTimeout(function(){if(SB.user&&typeof loadServerBotState==='function')loadServerBotState();},4000);
   // Batch 9: Fetch dynamic correlations from Supabase after init
   setTimeout(fetchDynamicCorrelations,6000);
   setInterval(fetchDynamicCorrelations,1800000); // Refresh every 30 min
