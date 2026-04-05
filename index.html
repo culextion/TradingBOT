@@ -127,6 +127,35 @@ select.inp{appearance:auto}
 .risk-bar-fill{height:100%;border-radius:3px;transition:width .3s}
 .corr-matrix{display:grid;gap:1px;font-size:8px}
 .corr-cell{padding:2px;text-align:center;border-radius:2px;font-weight:600}
+/* Batch 9: Watchlist heatmap */
+.wl-heatmap{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:4px}
+.wl-hm-cell{border-radius:4px;padding:6px 4px;text-align:center;cursor:pointer;font-size:10px;font-weight:600;transition:transform .15s,box-shadow .15s;min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.3}
+.wl-hm-cell:hover{transform:scale(1.04);box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.wl-hm-cell.on{outline:2px solid var(--blu);outline-offset:-1px}
+/* Batch 9: Chart type switcher */
+.chart-type-btn{padding:1px 5px;border-radius:3px;font-size:8px;font-weight:600;color:var(--t2);background:none;border:1px solid transparent;cursor:pointer}
+.chart-type-btn:hover{color:var(--t1);background:var(--s2)}
+.chart-type-btn.on{color:var(--blu);border-color:var(--blu);background:rgba(88,166,255,.1)}
+/* Batch 9: Fullscreen chart */
+.panel.chart-fullscreen{position:fixed!important;inset:8px!important;z-index:300!important;grid-column:auto!important;grid-row:auto!important;width:auto!important;height:auto!important;transition:all .3s ease}
+/* Batch 9: Drawing tools SVG overlay */
+.chart-svg-overlay{position:absolute;inset:0;z-index:40;pointer-events:none}
+.chart-svg-overlay.drawing{pointer-events:auto;cursor:crosshair}
+.chart-svg-overlay line{stroke:var(--ylw);stroke-width:1.5;stroke-dasharray:6,3}
+/* Batch 9: Order confirmation modal */
+.order-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:250;display:flex;align-items:center;justify-content:center}
+.order-confirm-box{background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:20px 24px;width:380px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+/* Batch 9: Fee breakdown line in Quick Order */
+.fee-breakdown-line{display:flex;gap:6px;align-items:center;font-size:9px;color:var(--t2);margin-top:4px;padding:3px 6px;background:var(--s2);border-radius:4px}
+.fee-breakdown-line .fee-item{display:flex;align-items:center;gap:2px}
+.fee-breakdown-line .fee-total{color:var(--ylw);font-weight:700}
+/* Batch 9: Daily summary report */
+.daily-report{background:linear-gradient(135deg,var(--s2),var(--s1));border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin-bottom:8px}
+.daily-report .report-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+.daily-report .report-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.daily-report .report-stat{background:var(--s2);border-radius:6px;padding:6px 8px;font-size:11px}
+.daily-report .report-stat .label{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:.3px}
+.daily-report .report-stat .value{font-weight:700;font-size:13px;margin-top:2px}
 /* Batch 6: Schedule toggle */
 .toggle-switch{position:relative;display:inline-block;width:32px;height:18px}
 .toggle-switch input{opacity:0;width:0;height:0}
@@ -203,7 +232,13 @@ select.inp{appearance:auto}
     </div>
     <div class="p-2 flex-1 overflow-y-auto">
       <div class="flex justify-between items-center mb-1">
-        <span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span>
+        <div class="flex items-center gap-1">
+          <span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span>
+          <div class="flex gap-0.5" id="wl-view-btns">
+            <button class="tf on wl-view-btn" onclick="setWLView('list',this)" style="font-size:8px;padding:1px 4px">List</button>
+            <button class="tf wl-view-btn" onclick="setWLView('heatmap',this)" style="font-size:8px;padding:1px 4px">Heatmap</button>
+          </div>
+        </div>
         <div class="flex gap-0.5" id="wl-sort-btns">
           <button class="tf wl-sort-btn" onclick="setWLSort('name',this)" style="font-size:8px;padding:1px 4px">Name</button>
           <button class="tf wl-sort-btn" onclick="setWLSort('price',this)" style="font-size:8px;padding:1px 4px">Price</button>
@@ -212,6 +247,7 @@ select.inp{appearance:auto}
         </div>
       </div>
       <div id="watchlist"></div>
+      <div id="watchlist-heatmap" class="wl-heatmap" style="display:none"></div>
     </div>
     <div class="p-2 border-t border-bd">
       <div class="text-t2 uppercase font-bold mb-1" style="font-size:9px;letter-spacing:1px">Market Pulse</div>
@@ -252,7 +288,7 @@ select.inp{appearance:auto}
     <!-- Chart grid -->
     <div class="grid gap-1.5 flex-1 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
     <!-- Row 1: Main chart + sidebar (insights + signals stacked) -->
-    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
+    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="chart-type-btn on" onclick="setChartType('candle',this)" title="Candlestick">Candle</button><button class="chart-type-btn" onclick="setChartType('line',this)" title="Line">Line</button><button class="chart-type-btn" onclick="setChartType('area',this)" title="Area">Area</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" id="trendline-btn" onclick="toggleTrendLineDraw(this)" title="Draw trend line" style="font-size:8px;padding:1px 4px">Trend</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main" style="position:relative"></div></div>
     <div class="flex flex-col gap-1.5 min-h-0 overflow-hidden">
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
@@ -418,6 +454,7 @@ select.inp{appearance:auto}
           <button class="btn" style="background:var(--s3);color:var(--t2);padding:2px 6px;font-size:9px" onclick="var pct=10;document.getElementById('mt-amount').value=Math.floor(portVal()*(pct/100));mtUpdatePreview()">10%</button>
         </div>
       </div>
+      <div id="mt-fee-breakdown" class="fee-breakdown-line" style="display:none"></div>
     </div>
   </div>
 
@@ -646,6 +683,11 @@ select.inp{appearance:auto}
     <div class="ph"><span>Cumulative P&L Over Time</span></div>
     <div class="pb" id="c-pnl-chart" style="height:220px"><div class="flex items-center justify-center h-full text-t2 text-xs">Complete trades to see P&L chart</div></div>
   </div>
+  <!-- Daily Reports (Batch 9 Task 5) -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Daily Reports</span><span id="daily-report-count" class="text-t2" style="font-size:9px">0 reports</span></div>
+    <div class="pb p-3 overflow-y-auto" id="daily-reports-container" style="max-height:500px"><div class="text-t2 text-xs text-center py-4">Daily summaries will appear here after market close (4 PM EST)</div></div>
+  </div>
 </div>
 </div>
 
@@ -867,6 +909,18 @@ select.inp{appearance:auto}
     <button class="btn flex-1 bg-s3 text-t1" style="font-size:10px" onclick="SB.signInWithGoogle()">Google</button>
   </div>
   <p class="text-t2 text-xs mt-3 text-center">Sign in to sync watchlists, trades, and bot settings across devices.</p>
+</div>
+</div>
+
+<!-- Order Confirmation Modal (Batch 9 Task 3b) -->
+<div id="order-confirm-overlay" class="order-confirm-overlay" style="display:none">
+<div class="order-confirm-box">
+  <div class="flex justify-between items-center mb-3"><span class="font-bold" style="font-size:14px">Confirm Order</span><button onclick="cancelOrderConfirm()" class="text-t2 hover:text-t1 text-lg" style="background:none;border:none;cursor:pointer">&times;</button></div>
+  <div id="order-confirm-body" style="font-size:12px;line-height:1.6"></div>
+  <div class="flex gap-2 mt-4">
+    <button id="order-confirm-yes" class="btn btn-g flex-1" style="padding:8px 16px;font-size:13px;font-weight:700">Confirm</button>
+    <button class="btn flex-1" style="background:var(--s3);color:var(--t2);padding:8px 16px;font-size:13px" onclick="cancelOrderConfirm()">Cancel</button>
+  </div>
 </div>
 </div>
 
@@ -2970,7 +3024,7 @@ window.showPage=function(p,btn){
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();populateRebalAssets();renderRebalance();
     renderPendingOrders();populateOrderAssets();renderRiskAnalytics();renderAccountSwitcher();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
-  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();renderNewsFeed();populateReplayAssets();renderTradeReplay();}
+  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();renderNewsFeed();populateReplayAssets();renderTradeReplay();renderDailyReports();checkDailyReportTime();}
   if(p==='settings'){
     var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
@@ -4450,6 +4504,11 @@ function renderRiskAnalytics(){
         if(corr>=0.8){h+='<div class="text-red mt-1" style="font-size:8px">High correlation ('+corr.toFixed(2)+') between '+syms[i]+' and '+syms[j]+' — concentrated risk</div>';warned=true;break;}
       }
     }
+    // Batch 9 Task 2c: Average portfolio correlation
+    var pcr=calcPortfolioCorrelation();
+    h+='<div class="flex justify-between mt-1" style="font-size:10px"><span class="text-t2">Avg Correlation</span><span class="font-bold '+(pcr.warn?'text-red':'text-grn')+'">'+pcr.avg.toFixed(2)+'</span></div>';
+    if(pcr.warn){h+='<div class="text-red mt-1" style="font-size:8px;padding:3px 6px;background:rgba(248,81,73,.1);border-radius:4px">Portfolio is highly correlated (avg '+pcr.avg.toFixed(2)+') — consider diversifying across less correlated assets</div>';}
+    h+=(_corrDataFetched?'<div class="text-t2 mt-1" style="font-size:7px">Using dynamic correlations from Supabase (90-day)</div>':'');
     h+='</div>';
   }
 
@@ -4561,6 +4620,541 @@ function loadNotifPrefsUI(){
   var st=document.getElementById('notif-sound-trade');if(st)st.checked=notifPrefs.soundOnTrade;
 }
 
+// ===================== BATCH 9 TASK 1: WATCHLIST HEATMAP VIEW =====================
+var _wlView='list'; // 'list' or 'heatmap'
+try{var sv=localStorage.getItem('ct_wl_view');if(sv)_wlView=sv;}catch(e){}
+
+window.setWLView=function(view,btn){
+  _wlView=view;
+  try{localStorage.setItem('ct_wl_view',view)}catch(e){}
+  document.querySelectorAll('.wl-view-btn').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  var listEl=document.getElementById('watchlist');
+  var hmEl=document.getElementById('watchlist-heatmap');
+  var sortBtns=document.getElementById('wl-sort-btns');
+  if(view==='heatmap'){
+    if(listEl)listEl.style.display='none';
+    if(hmEl)hmEl.style.display='';
+    if(sortBtns)sortBtns.style.display='none';
+    renderWLHeatmap();
+  }else{
+    if(listEl)listEl.style.display='';
+    if(hmEl)hmEl.style.display='none';
+    if(sortBtns)sortBtns.style.display='';
+    updateWL();
+  }
+};
+
+function renderWLHeatmap(){
+  var el=document.getElementById('watchlist-heatmap');if(!el)return;
+  var items=getWL().map(function(a){
+    var p=prOf(a.id),ch=chOf(a.id);
+    return{a:a,p:p,ch:ch};
+  });
+  if(!items.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4" style="grid-column:span 2">No assets</div>';return;}
+  el.innerHTML=items.map(function(item){
+    var a=item.a,ch=item.ch,u=ch>=0,on=a.id===sel;
+    var intensity=Math.min(1,Math.abs(ch)/8); // 8% = max intensity
+    var bg=u?'rgba(63,185,80,'+(0.15+intensity*0.55)+')':'rgba(248,81,73,'+(0.15+intensity*0.55)+')';
+    var tc=intensity>0.35?'#fff':(u?'var(--grn)':'var(--red)');
+    return'<div class="wl-hm-cell'+(on?' on':'')+'" onclick="_sel(\''+a.id+'\')" style="background:'+bg+';color:'+tc+'">'+
+      '<div style="font-size:11px;font-weight:700">'+a.sym+'</div>'+
+      '<div style="font-size:9px">'+(u?'+':'')+ch.toFixed(2)+'%</div></div>';
+  }).join('');
+}
+
+// Hook into updateWL to also update heatmap
+var _origUpdateWLB9=updateWL;
+updateWL=function(){
+  _origUpdateWLB9();
+  if(_wlView==='heatmap')renderWLHeatmap();
+};
+
+// ===================== BATCH 9 TASK 2: CORRELATION INTELLIGENCE =====================
+var _dynamicCorr={}; // Calculated correlations from real data
+var _corrDataFetched=false;
+
+// Fetch and calculate real correlations from Supabase asset_daily_stats
+function fetchDynamicCorrelations(){
+  if(!window.SUPABASE_URL_B9||!window.SUPABASE_ANON_B9)return;
+  var wla=getWL();
+  var promises=wla.map(function(a){
+    return fetch(SUPABASE_URL_B9+'/rest/v1/asset_daily_stats?select=date,close_price&asset_id=eq.'+a.id+'&order=date.desc&limit=90',{
+      headers:{'apikey':SUPABASE_ANON_B9,'Authorization':'Bearer '+SUPABASE_ANON_B9}
+    }).then(function(r){return r.json()}).then(function(data){
+      return{id:a.id,sym:a.sym,closes:Array.isArray(data)?data.sort(function(x,y){return x.date<y.date?-1:1}).map(function(d){return d.close_price}):[]};
+    }).catch(function(){return{id:a.id,sym:a.sym,closes:[]};});
+  });
+  Promise.all(promises).then(function(results){
+    var valid=results.filter(function(r){return r.closes.length>=30});
+    if(valid.length<2){_corrDataFetched=false;return;}
+    _corrDataFetched=true;
+    for(var i=0;i<valid.length;i++){
+      for(var j=i+1;j<valid.length;j++){
+        var a=valid[i],b=valid[j];
+        var corr=pearsonCorrelation(a.closes,b.closes);
+        var key=a.sym+'-'+b.sym;
+        _dynamicCorr[key]=corr;
+      }
+    }
+    // Update CORR_C / CORR_S with real values
+    Object.keys(_dynamicCorr).forEach(function(key){
+      if(mkt==='crypto')CORR_C[key]=_dynamicCorr[key];
+      else CORR_S[key]=_dynamicCorr[key];
+    });
+    checkCorrelationDivergences();
+  }).catch(function(){});
+}
+
+function pearsonCorrelation(x,y){
+  var n=Math.min(x.length,y.length);if(n<10)return 0;
+  var xx=x.slice(-n),yy=y.slice(-n);
+  var sumX=0,sumY=0,sumXY=0,sumX2=0,sumY2=0;
+  for(var i=0;i<n;i++){sumX+=xx[i];sumY+=yy[i];sumXY+=xx[i]*yy[i];sumX2+=xx[i]*xx[i];sumY2+=yy[i]*yy[i];}
+  var num=n*sumXY-sumX*sumY;
+  var den=Math.sqrt((n*sumX2-sumX*sumX)*(n*sumY2-sumY*sumY));
+  return den===0?0:num/den;
+}
+
+// Correlation divergence alerts
+function checkCorrelationDivergences(){
+  var co=mkt==='crypto'?CORR_C:CORR_S;
+  var wla=getWL();
+  for(var i=0;i<wla.length;i++){
+    for(var j=i+1;j<wla.length;j++){
+      var a1=wla[i],a2=wla[j];
+      var key1=a1.sym+'-'+a2.sym,key2=a2.sym+'-'+a1.sym;
+      var corr=co[key1]||co[key2]||0;
+      if(corr>0.85){
+        var ch1=chOf(a1.id)||0,ch2=chOf(a2.id)||0,diff=Math.abs(ch1-ch2);
+        if(diff>5){
+          var lagging=ch1<ch2?a1:a2;
+          showToast('Correlation divergence: '+a1.sym+'/'+a2.sym+' spread '+diff.toFixed(1)+'% (r='+corr.toFixed(2)+') — '+lagging.sym+' lagging','warn');
+        }
+      }
+    }
+  }
+}
+
+// Portfolio correlation risk — added to risk analytics
+function calcPortfolioCorrelation(){
+  if(account.positions.length<2)return{avg:0,warn:false};
+  var co=mkt==='crypto'?CORR_C:CORR_S;
+  var syms=account.positions.map(function(p){return p.sym});
+  var total=0,count=0;
+  for(var i=0;i<syms.length;i++){
+    for(var j=i+1;j<syms.length;j++){
+      var key1=syms[i]+'-'+syms[j],key2=syms[j]+'-'+syms[i];
+      var c=co[key1]||co[key2]||0;
+      total+=c;count++;
+    }
+  }
+  var avg=count>0?total/count:0;
+  return{avg:avg,warn:avg>0.8};
+}
+
+// ===================== BATCH 9 TASK 3: TRADE EXECUTION IMPROVEMENTS =====================
+
+// 3a: Fee breakdown in Quick Order preview
+var _origMtUpdatePreview=window.mtUpdatePreview;
+window.mtUpdatePreview=function(){
+  _origMtUpdatePreview();
+  var assetId=gv('mt-asset');if(!assetId)return;
+  var pr=prOf(assetId);if(!pr)return;
+  var amt=parseFloat(gv('mt-amount'))||0;if(amt<=0)return;
+  var dollarAmt=_mtMode==='dollar'?amt:amt*pr;
+  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var a=findA(assetId);var vol=a&&a.vol?a.vol:0.03;
+  var cost=calculateTradeCost(dollarAmt,feeProfile,'buy',vol);
+  var fbEl=document.getElementById('mt-fee-breakdown');
+  if(fbEl&&dollarAmt>0){
+    fbEl.style.display='';
+    fbEl.innerHTML=
+      '<span class="fee-item">Exchange: <span class="text-ylw">$'+fp(cost.fees)+'</span></span>'+
+      '<span class="text-t2">+</span>'+
+      '<span class="fee-item">Spread: <span class="text-ylw">$'+fp(cost.spread)+'</span></span>'+
+      '<span class="text-t2">+</span>'+
+      '<span class="fee-item">Slippage: <span class="text-ylw">$'+fp(cost.slippage)+'</span></span>'+
+      '<span class="text-t2">=</span>'+
+      '<span class="fee-total">$'+fp(cost.total)+' ('+(dollarAmt>0?(cost.total/dollarAmt*100).toFixed(2):0)+'%)</span>';
+  }
+};
+
+// 3b: Order confirmation modal for trades > $5000
+var _pendingOrderConfirm=null;
+
+function showOrderConfirm(side,assetId,dollarAmt,callback){
+  var pr=prOf(assetId);if(!pr)return callback();
+  var a=findA(assetId);var sym=a?a.sym:assetId;
+  var qty=dollarAmt/pr;
+  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var vol=a&&a.vol?a.vol:0.03;
+  var cost=calculateTradeCost(dollarAmt,feeProfile,side,vol);
+  var overlay=document.getElementById('order-confirm-overlay');
+  var body=document.getElementById('order-confirm-body');
+  var btn=document.getElementById('order-confirm-yes');
+  if(!overlay||!body)return callback();
+
+  body.innerHTML=
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--'+(side==='buy'?'grn':'red')+')">'+side.toUpperCase()+' '+qty.toFixed(4)+' '+sym+' at $'+fp(pr)+'</div>'+
+    '<div class="metric mb-1"><span class="text-t2">Total Value</span><span class="font-bold">$'+fp(dollarAmt)+'</span></div>'+
+    '<div class="metric mb-1"><span class="text-t2">Exchange Fee</span><span class="text-ylw">$'+fp(cost.fees)+'</span></div>'+
+    '<div class="metric mb-1"><span class="text-t2">Spread</span><span class="text-ylw">$'+fp(cost.spread)+'</span></div>'+
+    '<div class="metric mb-1"><span class="text-t2">Est. Slippage</span><span class="text-ylw">$'+fp(cost.slippage)+'</span></div>'+
+    '<div class="metric mb-1" style="background:var(--s3)"><span class="text-t2 font-bold">Total Fees</span><span class="text-ylw font-bold">$'+fp(cost.total)+' ('+(dollarAmt>0?(cost.total/dollarAmt*100).toFixed(2):0)+'%)</span></div>'+
+    '<div class="metric"><span class="text-t2">Net Amount</span><span class="font-bold">$'+fp(dollarAmt-cost.total)+'</span></div>';
+
+  btn.className='btn '+(side==='buy'?'btn-g':'btn-r')+' flex-1';
+  btn.textContent='Confirm '+side.toUpperCase();
+  btn.onclick=function(){overlay.style.display='none';callback();};
+  overlay.style.display='flex';
+}
+
+window.cancelOrderConfirm=function(){
+  var overlay=document.getElementById('order-confirm-overlay');
+  if(overlay)overlay.style.display='none';
+};
+
+// Override mtExecute to add confirmation for > $5000
+var _origMtExecute=window.mtExecute;
+window.mtExecute=function(side){
+  var assetId=gv('mt-asset');if(!assetId)return;
+  var pr=prOf(assetId);if(!pr)return;
+  var amt=parseFloat(gv('mt-amount'))||0;if(amt<=0){alert('Enter a valid amount');return;}
+  var dollarAmt=_mtMode==='dollar'?amt:amt*pr;
+
+  if(dollarAmt>5000){
+    showOrderConfirm(side,assetId,dollarAmt,function(){
+      _origMtExecute(side);
+    });
+  }else{
+    _origMtExecute(side);
+  }
+};
+
+// 3c: Trade sound effects
+var _buySnd=null,_sellSnd=null;
+try{
+  // Short base64-encoded WAV tones
+  // Buy: ascending two-tone chime (~150ms)
+  _buySnd=new Audio('data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YVAAAAB/f39/f3+AgH5+fn5+fn9/gIB+fn5+f39/f4CAfn5+foCAf3+AgH5+gIB/f4CAf3+AgICAgICBgYGBgYKCgoKDg4ODhISEhIWFhYaGhoeH');
+  // Sell: descending two-tone (~150ms)
+  _sellSnd=new Audio('data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YVAAAACHh4eGhoaFhYWEhISEg4ODgoKCgYGBgICAgH9/f39+fn5+fn5+f39/f39/f4B/f39/f35+fn5/f39/f39+fn5+fn5/f39/fn5+fn5+fn5/fw==');
+  _buySnd.volume=0.3;_sellSnd.volume=0.3;
+}catch(e){}
+
+function playTradeSound(side){
+  if(typeof notifPrefs==='undefined'||!notifPrefs.soundOnTrade)return;
+  try{
+    var snd=side==='buy'?_buySnd:_sellSnd;
+    if(snd){snd.currentTime=0;snd.play();}
+  }catch(e){}
+}
+
+// Patch showToast to play buy/sell sounds
+var _origShowToast=showToast;
+showToast=function(msg,type){
+  _origShowToast(msg,type);
+  if(type==='buy')playTradeSound('buy');
+  else if(type==='sell')playTradeSound('sell');
+};
+
+// ===================== BATCH 9 TASK 4: CHART ENHANCEMENTS =====================
+
+// 4a: Chart type switcher
+var _chartType='candle';
+try{var ct=localStorage.getItem('ct_chart_type');if(ct)_chartType=ct;}catch(e){}
+
+window.setChartType=function(type,btn){
+  _chartType=type;
+  try{localStorage.setItem('ct_chart_type',type)}catch(e){}
+  document.querySelectorAll('.chart-type-btn').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  // Reload main chart with new type
+  loadTile('main',tileAsset.main,tileDays.main);
+};
+
+// Override loadCh to respect chart type for main chart
+var _origLoadCh=loadCh;
+loadCh=function(cid,data,key){
+  if(key==='main'&&_chartType!=='candle'){
+    // Use line or area series instead of candlestick
+    if(chrt[key])try{chrt[key].remove()}catch(e){}
+    var ch=mkChart(cid);if(!ch||!data||!data.length)return;chrt[key]=ch;
+    var _grn=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
+    var _red=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
+    var _blu=getComputedStyle(document.documentElement).getPropertyValue('--blu').trim()||'#58a6ff';
+    var up=data[data.length-1].close>=data[0].close;
+    var lineColor=up?_grn:_red;
+    var lineData=data.map(function(d){return{time:d.time,value:d.close}});
+
+    if(_chartType==='line'){
+      ser[key]=ch.addLineSeries({color:lineColor,lineWidth:2,priceLineVisible:true,lastValueVisible:true});
+      ser[key].setData(lineData);
+    }else if(_chartType==='area'){
+      ser[key]=ch.addAreaSeries({topColor:lineColor+'40',bottomColor:lineColor+'08',lineColor:lineColor,lineWidth:2,priceLineVisible:true,lastValueVisible:true});
+      ser[key].setData(lineData);
+    }
+
+    // SMA overlay
+    if(data.length>20){var smaArr=[];for(var i=19;i<data.length;i++){var s=0;for(var j=0;j<20;j++)s+=data[i-j].close;smaArr.push({time:data[i].time,value:s/20});}
+      var ls=ch.addLineSeries({color:_blu,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});ls.setData(smaArr);}
+    // Volume
+    var vs=ch.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'});ch.priceScale('vol').applyOptions({scaleMargins:{top:.85,bottom:0}});
+    vs.setData(data.map(function(d){return{time:d.time,value:d.volume||Math.abs(d.close-d.open)*1e6*(Math.random()+.5),color:d.close>=d.open?'rgba(63,185,80,.2)':'rgba(248,81,73,.2)'}}));
+    ch.timeScale().fitContent();
+
+    // Restore drawing overlay
+    setTimeout(function(){restoreDrawingOverlay('c-main')},100);
+    return;
+  }
+  _origLoadCh(cid,data,key);
+  // Restore drawing overlay after chart load
+  if(key==='main')setTimeout(function(){restoreDrawingOverlay('c-main')},100);
+};
+
+// 4b: Drawing tools — trend line via SVG overlay
+var _drawingMode=false;
+var _drawingLines=[]; // [{x1,y1,x2,y2}]
+var _drawClickCount=0;
+var _drawStart={x:0,y:0};
+try{var dl=localStorage.getItem('ct_draw_lines');if(dl)_drawingLines=JSON.parse(dl);}catch(e){}
+
+window.toggleTrendLineDraw=function(btn){
+  _drawingMode=!_drawingMode;
+  _drawClickCount=0;
+  if(btn){
+    if(_drawingMode){btn.classList.add('on');btn.style.color='var(--ylw)';}
+    else{btn.classList.remove('on');btn.style.color='';}
+  }
+  var svg=document.querySelector('#c-main .chart-svg-overlay');
+  if(svg){
+    if(_drawingMode)svg.classList.add('drawing');
+    else svg.classList.remove('drawing');
+  }
+};
+
+function ensureDrawingOverlay(containerId){
+  var container=document.getElementById(containerId);if(!container)return null;
+  var svg=container.querySelector('.chart-svg-overlay');
+  if(!svg){
+    svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.classList.add('chart-svg-overlay');
+    svg.style.cssText='position:absolute;inset:0;z-index:40;pointer-events:none;width:100%;height:100%';
+    container.appendChild(svg);
+  }
+  return svg;
+}
+
+function restoreDrawingOverlay(containerId){
+  var svg=ensureDrawingOverlay(containerId);if(!svg)return;
+  // Clear existing lines
+  while(svg.firstChild)svg.removeChild(svg.firstChild);
+  // Draw saved lines
+  _drawingLines.forEach(function(ln,idx){
+    var line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',ln.x1+'%');line.setAttribute('y1',ln.y1+'%');
+    line.setAttribute('x2',ln.x2+'%');line.setAttribute('y2',ln.y2+'%');
+    line.style.pointerEvents='auto';
+    line.style.cursor='pointer';
+    // Right-click to delete
+    line.addEventListener('contextmenu',function(e){
+      e.preventDefault();
+      _drawingLines.splice(idx,1);
+      try{localStorage.setItem('ct_draw_lines',JSON.stringify(_drawingLines))}catch(e2){}
+      restoreDrawingOverlay(containerId);
+    });
+    svg.appendChild(line);
+  });
+  // Handle drawing clicks
+  if(_drawingMode)svg.classList.add('drawing');
+}
+
+document.addEventListener('click',function(e){
+  if(!_drawingMode)return;
+  var container=document.getElementById('c-main');if(!container)return;
+  if(!container.contains(e.target))return;
+  var rect=container.getBoundingClientRect();
+  var xPct=(e.clientX-rect.left)/rect.width*100;
+  var yPct=(e.clientY-rect.top)/rect.height*100;
+
+  if(_drawClickCount===0){
+    _drawStart={x:xPct,y:yPct};
+    _drawClickCount=1;
+    // Show temp marker
+    var svg=ensureDrawingOverlay('c-main');
+    if(svg){
+      var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',xPct+'%');c.setAttribute('cy',yPct+'%');c.setAttribute('r','3');
+      c.style.fill='var(--ylw)';c.id='draw-temp-dot';
+      svg.appendChild(c);
+    }
+  }else{
+    _drawingLines.push({x1:_drawStart.x,y1:_drawStart.y,x2:xPct,y2:yPct});
+    try{localStorage.setItem('ct_draw_lines',JSON.stringify(_drawingLines))}catch(e2){}
+    _drawClickCount=0;
+    var svg=ensureDrawingOverlay('c-main');
+    var dot=svg?svg.querySelector('#draw-temp-dot'):null;
+    if(dot)dot.remove();
+    restoreDrawingOverlay('c-main');
+    // Auto exit drawing mode
+    toggleTrendLineDraw(document.getElementById('trendline-btn'));
+    showToast('Trend line drawn (right-click line to delete)','info');
+  }
+});
+
+// 4c: Fullscreen chart — double-click any chart panel
+document.addEventListener('dblclick',function(e){
+  var panel=e.target.closest('.panel');
+  if(!panel)return;
+  // Only panels that contain a chart (.pb with a chart container)
+  var chartContainer=panel.querySelector('.pb');
+  if(!chartContainer)return;
+  var chartId=chartContainer.id;
+  if(!chartId||!chartId.startsWith('c-'))return;
+
+  if(panel.classList.contains('chart-fullscreen')){
+    panel.classList.remove('chart-fullscreen');
+    setTimeout(resizeCharts,350);
+  }else{
+    panel.classList.add('chart-fullscreen');
+    setTimeout(resizeCharts,350);
+  }
+});
+
+// ===================== BATCH 9 TASK 5: DAILY SUMMARY REPORT =====================
+var _dailyReports=[];
+try{var dr=localStorage.getItem('ct_daily_reports');if(dr)_dailyReports=JSON.parse(dr);}catch(e){}
+var _lastReportDate='';
+
+function generateDailyReport(){
+  var now=new Date();
+  var est=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var dateStr=est.toISOString().slice(0,10);
+
+  // Don't regenerate same-day report
+  if(_lastReportDate===dateStr)return;
+
+  var todayTrades=account.trades.filter(function(t){
+    if(!t.ts)return false;
+    var td=new Date(t.ts);
+    var tds=td.toISOString().slice(0,10);
+    return tds===dateStr||tds===new Date(Date.now()-86400000).toISOString().slice(0,10);
+  });
+
+  var totalTrades=todayTrades.length;
+  var sells=todayTrades.filter(function(t){return t.type==='SELL'&&t.pnl!==undefined});
+  var netPnL=sells.reduce(function(s,t){return s+t.pnl},0);
+  var bestTrade=sells.length?sells.reduce(function(best,t){return t.pnl>best.pnl?t:best},sells[0]):null;
+  var worstTrade=sells.length?sells.reduce(function(worst,t){return t.pnl<worst.pnl?t:worst},sells[0]):null;
+
+  var pv=portVal();
+  var pvChange=pv-account.start;
+  var pvChangePct=account.start>0?(pvChange/account.start*100):0;
+
+  // Market regime
+  var btcCh=chOf('bitcoin')||chOf('spy')||0;
+  var regime=btcCh>2?'Strong Bullish':btcCh>0?'Mildly Bullish':btcCh>-2?'Mildly Bearish':'Strong Bearish';
+
+  // Bot vs buy-and-hold
+  var botReturn=account.start>0?((pv-account.start)/account.start*100):0;
+  var bhReturn=btcCh; // simplified
+  var alpha=botReturn-bhReturn;
+
+  // Top unacted signals
+  var moves=analyzeMarket();
+  var unactedSignals=moves.filter(function(m){
+    return!todayTrades.some(function(t){return t.id===m.id&&t.type===(m.dir==='buy'?'BUY':'SELL')});
+  }).slice(0,3);
+
+  var report={
+    date:dateStr,
+    generated:now.toISOString(),
+    totalTrades:totalTrades,
+    netPnL:netPnL,
+    bestTrade:bestTrade?{sym:bestTrade.sym,pnl:bestTrade.pnl}:null,
+    worstTrade:worstTrade?{sym:worstTrade.sym,pnl:worstTrade.pnl}:null,
+    portfolioValue:pv,
+    pvChange:pvChange,
+    pvChangePct:pvChangePct,
+    regime:regime,
+    botReturn:botReturn,
+    bhReturn:bhReturn,
+    alpha:alpha,
+    unactedSignals:unactedSignals.map(function(s){return{sym:s.sym,dir:s.dir,conf:s.conf,reason:s.reason.substring(0,80)}})
+  };
+
+  // Replace if same date, else add
+  var existIdx=_dailyReports.findIndex(function(r){return r.date===dateStr});
+  if(existIdx>=0)_dailyReports[existIdx]=report;
+  else _dailyReports.unshift(report);
+
+  // Keep last 7
+  if(_dailyReports.length>7)_dailyReports.length=7;
+  _lastReportDate=dateStr;
+  try{localStorage.setItem('ct_daily_reports',JSON.stringify(_dailyReports))}catch(e){}
+  renderDailyReports();
+}
+
+function renderDailyReports(){
+  var el=document.getElementById('daily-reports-container');if(!el)return;
+  var countEl=document.getElementById('daily-report-count');
+  if(countEl)countEl.textContent=_dailyReports.length+' report'+(_dailyReports.length!==1?'s':'');
+
+  if(!_dailyReports.length){
+    el.innerHTML='<div class="text-t2 text-xs text-center py-4">Daily summaries will appear here after market close (4 PM EST)</div>';return;
+  }
+
+  el.innerHTML=_dailyReports.map(function(r){
+    var pnlC=r.netPnL>=0?'text-grn':'text-red';
+    var pvC=r.pvChange>=0?'text-grn':'text-red';
+    var alphaC=r.alpha>=0?'text-grn':'text-red';
+
+    var h='<div class="daily-report">';
+    h+='<div class="report-header">';
+    h+='<div><span class="font-bold text-t1" style="font-size:14px">Daily Summary</span><br><span class="text-t2" style="font-size:10px">'+r.date+'</span></div>';
+    h+='<div class="text-right"><span class="font-bold '+pnlC+'" style="font-size:16px">'+(r.netPnL>=0?'+':'')+fp(Math.abs(r.netPnL))+'</span><br><span class="text-t2" style="font-size:9px">Net P&L</span></div>';
+    h+='</div>';
+
+    h+='<div class="report-grid">';
+    h+='<div class="report-stat"><div class="label">Total Trades</div><div class="value text-t1">'+r.totalTrades+'</div></div>';
+    h+='<div class="report-stat"><div class="label">Portfolio Value</div><div class="value text-t1">$'+fp(r.portfolioValue)+'</div></div>';
+    h+='<div class="report-stat"><div class="label">Best Trade</div><div class="value '+(r.bestTrade?'text-grn':'text-t2')+'">'+(r.bestTrade?r.bestTrade.sym+' +$'+fp(r.bestTrade.pnl):'None')+'</div></div>';
+    h+='<div class="report-stat"><div class="label">Worst Trade</div><div class="value '+(r.worstTrade&&r.worstTrade.pnl<0?'text-red':'text-t2')+'">'+(r.worstTrade?r.worstTrade.sym+' $'+fp(r.worstTrade.pnl):'None')+'</div></div>';
+    h+='<div class="report-stat"><div class="label">Portfolio Change</div><div class="value '+pvC+'">'+(r.pvChange>=0?'+':'')+fp(Math.abs(r.pvChange))+' ('+r.pvChangePct.toFixed(2)+'%)</div></div>';
+    h+='<div class="report-stat"><div class="label">Market Regime</div><div class="value text-t1">'+r.regime+'</div></div>';
+    h+='<div class="report-stat"><div class="label">Bot vs Buy & Hold</div><div class="value '+alphaC+'">Alpha: '+(r.alpha>=0?'+':'')+r.alpha.toFixed(2)+'%</div></div>';
+    h+='<div class="report-stat"><div class="label">Bot Return</div><div class="value '+(r.botReturn>=0?'text-grn':'text-red')+'">'+r.botReturn.toFixed(2)+'%</div></div>';
+    h+='</div>';
+
+    // Unacted signals
+    if(r.unactedSignals&&r.unactedSignals.length){
+      h+='<div style="margin-top:6px"><div class="text-t2 font-bold uppercase" style="font-size:9px;letter-spacing:.5px;margin-bottom:4px">Top Signals Not Acted On</div>';
+      r.unactedSignals.forEach(function(s){
+        h+='<div class="sig '+(s.dir==='buy'?'bull':'bear')+'" style="padding:4px 6px;margin-bottom:3px;font-size:10px">'+
+          '<span class="font-bold text-t1">'+s.sym+'</span> <span class="font-bold '+(s.dir==='buy'?'text-grn':'text-red')+'">'+s.dir.toUpperCase()+'</span> '+
+          '<span class="text-t2">'+s.conf+'%</span> <span class="text-t2" style="font-size:9px">'+s.reason+'</span></div>';
+      });
+      h+='</div>';
+    }
+
+    h+='</div>';
+    return h;
+  }).join('');
+}
+
+// Check if it's time to generate daily report (after 4 PM EST)
+function checkDailyReportTime(){
+  var now=new Date();
+  var est=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var hour=est.getHours();
+  var dateStr=est.toISOString().slice(0,10);
+  // Generate if after 4 PM EST and no report for today yet
+  if(hour>=16&&_lastReportDate!==dateStr){
+    generateDailyReport();
+  }
+}
+
 // ===================== INIT =====================
 ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
@@ -4589,12 +5183,37 @@ setInterval(function(){fetchMarketOverview();renderTrending();},300000); // Refr
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
 setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
 
+// Batch 9: Init watchlist heatmap view
+(function(){
+  var btns=document.querySelectorAll('.wl-view-btn');
+  btns.forEach(function(b){b.classList.remove('on');if(b.textContent.toLowerCase()===_wlView)b.classList.add('on')});
+  if(_wlView==='heatmap'){
+    var listEl=document.getElementById('watchlist');if(listEl)listEl.style.display='none';
+    var hmEl=document.getElementById('watchlist-heatmap');if(hmEl)hmEl.style.display='';
+    var sortBtns=document.getElementById('wl-sort-btns');if(sortBtns)sortBtns.style.display='none';
+  }
+})();
+// Batch 9: Init chart type buttons
+(function(){
+  var btns=document.querySelectorAll('.chart-type-btn');
+  btns.forEach(function(b){b.classList.remove('on');if(b.textContent.toLowerCase()===_chartType)b.classList.add('on')});
+})();
+// Batch 9: Daily reports
+renderDailyReports();
+setTimeout(checkDailyReportTime,5000);
+setInterval(checkDailyReportTime,600000); // Check every 10 minutes
+
 // Init Supabase — REPLACE THESE WITH YOUR PROJECT CREDENTIALS
 // After creating your Supabase project, update these values:
 var SUPABASE_URL = 'https://muwccszylofokgbxfvvj.supabase.co';
 var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11d2Njc3p5bG9mb2tnYnhmdnZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzk0MzcsImV4cCI6MjA5MDg1NTQzN30.07D_5vGyTpf5b9CdwqEb92Og-XDFBclZCsdaKNFxc1Y';
+// Batch 9: Store Supabase creds for correlation fetch
+window.SUPABASE_URL_B9=SUPABASE_URL;window.SUPABASE_ANON_B9=SUPABASE_ANON;
 if(SUPABASE_URL && SUPABASE_ANON) {
   SB.init(SUPABASE_URL, SUPABASE_ANON);
+  // Batch 9: Fetch dynamic correlations from Supabase after init
+  setTimeout(fetchDynamicCorrelations,6000);
+  setInterval(fetchDynamicCorrelations,1800000); // Refresh every 30 min
 } else {
   console.log('Supabase not configured — running in local-only mode. Set SUPABASE_URL and SUPABASE_ANON in index.html to enable cloud sync.');
 }
