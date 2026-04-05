@@ -1887,6 +1887,34 @@ window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){
 
 function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p.qty*prOf(p.id)});return v;}
 
+// Fetch live prices for ALL held positions (cross-market)
+function fetchHeldPositionPrices(){
+  if(!account.positions.length)return;
+  // Find crypto positions without live prices
+  var cryptoIds=account.positions.filter(function(p){
+    return !prices[p.id]||!prices[p.id].usd;
+  }).filter(function(p){
+    return CRYPTO.find(function(c){return c.id===p.id})||['bitcoin','ethereum','solana','binancecoin','ripple','cardano','dogecoin','polkadot','chainlink','avalanche-2','polygon'].indexOf(p.id)>-1;
+  }).map(function(p){return p.id});
+  if(cryptoIds.length){
+    fetch('https://api.coingecko.com/api/v3/simple/price?ids='+cryptoIds.join(',')+'&vs_currencies=usd&include_24hr_change=true')
+      .then(function(r){return r.json()})
+      .then(function(d){
+        for(var id in d){prices[id]={usd:d[id].usd,usd_24h_change:d[id].usd_24h_change||0};}
+        updateUI();updateHdr();
+      }).catch(function(){});
+  }
+  // Stock positions — try Finnhub if available
+  var stockPos=account.positions.filter(function(p){
+    return !prices[p.id]||!prices[p.id].usd;
+  }).filter(function(p){
+    return STOCKS.find(function(s){return s.id===p.id})||(typeof ALL_STOCKS!=='undefined'&&ALL_STOCKS.find(function(s){return s.id===p.id}));
+  });
+  if(stockPos.length&&typeof fhAllQuotes==='function'){
+    fhAllQuotes(stockPos).then(function(){updateUI();updateHdr();}).catch(function(){});
+  }
+}
+
 // ===================== BOT ENGINE =====================
 window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';
   _botStartedAt=Date.now();
@@ -2865,7 +2893,13 @@ document.addEventListener('click',function(e){if(!e.target.closest('.search-box'
 // ===================== HELPERS =====================
 function getAssets(){return mkt==='crypto'?CRYPTO:STOCKS}
 function findA(id){return CRYPTO.find(function(c){return c.id===id})||STOCKS.find(function(s){return s.id===id})||wl.find(function(w){return w.id===id})||null}
-function prOf(id){var p=prices[id];return p?p.usd:0}
+function prOf(id){
+  var p=prices[id];if(p&&p.usd)return p.usd;
+  // Fallback: use last known avgPrice from position so value never shows $0
+  var pos=account.positions.find(function(x){return x.id===id});
+  if(pos&&pos.avgPrice)return pos.avgPrice;
+  return 0;
+}
 function chOf(id){var p=prices[id];return p?(p.usd_24h_change||0):0}
 function fp(p){if(!p)return'0.00';if(p>=1e9)return(p/1e9).toFixed(2)+'B';if(p>=1e6)return(p/1e6).toFixed(2)+'M';if(p>=1000)return p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return p.toFixed(2);return p.toFixed(4)}
 function setText(id,t){var el=document.getElementById(id);if(el)el.textContent=t}
@@ -5236,6 +5270,8 @@ setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textCon
 onStratChange();
 initTicker();
 loadAll();
+// Fetch prices for ALL held positions (cross-market) after initial load
+setTimeout(fetchHeldPositionPrices, 3000);
 updateDcaTargets();
 loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
 // Batch 6: Init pending orders, order assets, risk analytics, schedule, notif prefs

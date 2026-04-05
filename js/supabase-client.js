@@ -87,6 +87,8 @@ var SB = {
       if (typeof updateTradeLog === 'function') updateTradeLog();
       if (typeof renderAlerts === 'function') renderAlerts();
       if (typeof renderPendingOrders === 'function') renderPendingOrders();
+      // Fetch live prices for ALL held positions (cross-market)
+      if (typeof fetchHeldPositionPrices === 'function') setTimeout(fetchHeldPositionPrices, 1000);
     } catch(e) { console.error('Sync error on login:', e); }
     // Update UI
     if (typeof updateAuthUI === 'function') updateAuthUI(true);
