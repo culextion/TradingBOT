@@ -172,7 +172,7 @@ select.inp{appearance:auto}
       <button class="nav-tab flex-1 py-2" style="font-size:10px" onclick="switchMkt('stocks',this)">Stocks</button>
     </div>
     <div class="p-2 search-box">
-      <input id="search" class="inp" placeholder="Search any asset..." oninput="doSearch(this.value)" onfocus="doSearch(this.value)"/>
+      <input id="search" class="inp" placeholder="Search any asset..." oninput="doSearch(this.value)" onfocus="doSearch(this.value)" autocomplete="off" data-lpignore="true" data-form-type="other"/>
       <div id="search-drop" class="search-drop"></div>
     </div>
     <div class="p-2 flex-1 overflow-y-auto">
@@ -210,7 +210,7 @@ select.inp{appearance:auto}
 </div>
 
 <!-- PAGE: BOT -->
-<div id="page-bot" class="h-full overflow-y-auto p-3" style="display:none">
+<div id="page-bot" autocomplete="off" class="h-full overflow-y-auto p-3" style="display:none">
 <div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto auto;height:calc(100vh - 72px)">
 
   <!-- Bot Control (left sidebar, spans all rows) -->
@@ -261,7 +261,7 @@ select.inp{appearance:auto}
         <button class="btn" style="background:var(--s3);color:var(--red);padding:3px 8px;font-size:9px" onclick="applyPreset('yolo')" title="50% per trade, max risk">Max Risk</button>
       </div>
       <div class="grid grid-cols-2 gap-2">
-        <div><label class="text-t2" style="font-size:9px">Position Size % <span class="text-t2" title="% of portfolio per trade">(per trade)</span></label><input type="number" id="r-size" value="10" class="inp"/></div>
+        <div><label class="text-t2" style="font-size:9px">Position Size % <span class="text-t2" title="% of portfolio per trade">(per trade)</span></label><input type="number" id="r-size" value="10" class="inp" autocomplete="off"/></div>
         <div><label class="text-t2" style="font-size:9px">Stop Loss %</label><input type="number" id="r-sl" value="5" class="inp"/></div>
         <div><label class="text-t2" style="font-size:9px">Take Profit %</label><input type="number" id="r-tp" value="10" class="inp"/></div>
         <div><label class="text-t2" style="font-size:9px">Max Positions</label><input type="number" id="r-max" value="5" class="inp"/></div>
@@ -659,8 +659,8 @@ select.inp{appearance:auto}
 <div class="bg-s1 border border-bd rounded-lg p-6 w-80">
   <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">Sign In to culextrade</span><button onclick="document.getElementById('auth-overlay').style.display='none'" class="text-t2 hover:text-t1 text-lg">&times;</button></div>
   <div id="auth-error" class="text-red text-xs mb-2 hidden"></div>
-  <input id="auth-email" class="inp mb-2" placeholder="Email" type="email"/>
-  <input id="auth-pass" class="inp mb-3" placeholder="Password" type="password"/>
+  <input id="auth-email" class="inp mb-2" placeholder="Email" type="email" autocomplete="username"/>
+  <input id="auth-pass" class="inp mb-3" placeholder="Password" type="password" autocomplete="current-password"/>
   <button class="btn btn-b w-full mb-2" onclick="doSignIn()">Sign In</button>
   <button class="btn w-full mb-2 bg-s3 text-t1" onclick="doSignUp()">Create Account</button>
   <div class="flex gap-2">
