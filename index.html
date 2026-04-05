@@ -417,15 +417,15 @@ select.inp{appearance:auto}
   </div>
 
   <!-- Manual Trade Panel -->
-  <div class="panel" style="grid-column:2/4">
+  <div class="panel" style="grid-column:2/4;overflow:visible">
     <div class="ph"><span>Quick Order</span><span id="mt-status" class="text-t2" style="font-size:9px"></span></div>
-    <div class="pb" style="padding:8px 12px">
+    <div class="pb" style="padding:8px 12px;overflow:visible">
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
         <div style="flex:1;min-width:160px;position:relative">
           <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
           <input id="mt-search" class="inp" placeholder="Search symbol or name..." autocomplete="off" oninput="mtSearchFilter(this.value)" onfocus="mtSearchFilter(this.value)" style="font-size:11px"/>
           <input type="hidden" id="mt-asset"/>
-          <div id="mt-search-drop" style="display:none;max-height:200px;overflow-y:auto;position:absolute;left:0;right:0;top:100%;z-index:100;background:var(--s2);border:1px solid var(--bd);border-radius:6px;margin-top:2px"></div>
+          <div id="mt-search-drop" style="display:none;max-height:200px;overflow-y:auto;position:absolute;left:0;right:0;top:100%;z-index:500;background:var(--s2);border:1px solid var(--bd);border-radius:6px;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
         </div>
         <div style="width:90px">
           <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Current Price</label>
