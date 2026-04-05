@@ -353,10 +353,16 @@ select.inp{appearance:auto}
       <div id="server-bot-status" class="text-t2 text-xs mb-2"></div>
       <hr class="border-bd"/>
       <div><label class="text-t2 text-xs block mb-1">Market</label>
-        <div class="flex gap-1">
+        <div class="flex gap-1 mb-2">
           <button class="btn flex-1 bg-s3 text-t1 bot-mkt-btn on" onclick="setBotMkt('crypto',this)" style="font-size:10px;padding:3px 8px">Crypto</button>
           <button class="btn flex-1 bg-s3 text-t2 bot-mkt-btn" onclick="setBotMkt('stocks',this)" style="font-size:10px;padding:3px 8px">Stocks</button>
         </div>
+        <div class="text-t2 text-xs font-bold uppercase mb-1">Bot Trading Markets</div>
+        <div class="flex gap-3 mb-1" style="font-size:10px">
+          <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="bot-mkt-crypto" checked onchange="saveBotMarkets()" style="width:13px;height:13px"><span class="text-t1">Crypto</span></label>
+          <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="bot-mkt-stocks" checked onchange="saveBotMarkets()" style="width:13px;height:13px"><span class="text-t1">Stocks</span></label>
+        </div>
+        <div class="text-t2" style="font-size:9px">Bot will only trade in checked markets</div>
       </div>
       <div><label class="text-t2 text-xs block mb-1">Strategy</label>
         <select id="strat-sel" class="inp" onchange="onStratChange()">
@@ -514,7 +520,14 @@ select.inp{appearance:auto}
     </div>
   </div>
   <div class="panel" style="min-height:200px">
-    <div class="ph" style="padding:3px 8px;min-height:24px"><span>Open Positions</span></div>
+    <div class="ph" style="padding:3px 8px;min-height:24px">
+      <span>Open Positions</span>
+      <div class="flex gap-0.5">
+        <button class="tf on pos-filter-btn" onclick="setPosFilter('all',this)" style="font-size:9px;padding:1px 5px">All</button>
+        <button class="tf pos-filter-btn" onclick="setPosFilter('crypto',this)" style="font-size:9px;padding:1px 5px">Crypto</button>
+        <button class="tf pos-filter-btn" onclick="setPosFilter('stocks',this)" style="font-size:9px;padding:1px 5px">Stocks</button>
+      </div>
+    </div>
     <div class="pb p-2 overflow-y-auto" id="pos-list"><div class="text-t2 text-xs text-center py-4">No open positions</div></div>
   </div>
 
@@ -1516,6 +1529,33 @@ function updateHdr(){Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,ti
   setText('pf-cash','$'+fp(account.cash));
   var m=RiskEngine.calcMetrics(account.trades,account.start);setText('pf-wr',m&&m.totalTrades>0?(m.winRate*100).toFixed(0)+'%':'--');}
 
+// Position filter: all / crypto / stocks
+var _posFilter='all';
+var _cryptoIds=['bitcoin','ethereum','solana','binancecoin','ripple','cardano','dogecoin','polkadot','chainlink','avalanche-2','polygon'];
+function isCryptoPos(p){return CRYPTO.find(function(c){return c.id===p.id})||_cryptoIds.indexOf(p.id)>-1;}
+// Per-market bot trading control
+function getBotMarkets(){
+  try{var s=localStorage.getItem('ct_bot_markets');if(s)return JSON.parse(s);}catch(e){}
+  return{crypto:true,stocks:true};
+}
+window.saveBotMarkets=function(){
+  var m={crypto:document.getElementById('bot-mkt-crypto').checked,stocks:document.getElementById('bot-mkt-stocks').checked};
+  localStorage.setItem('ct_bot_markets',JSON.stringify(m));
+  blog('Bot markets updated — Crypto: '+(m.crypto?'ON':'OFF')+', Stocks: '+(m.stocks?'ON':'OFF'));
+};
+function loadBotMarkets(){
+  var m=getBotMarkets();
+  var cc=document.getElementById('bot-mkt-crypto');if(cc)cc.checked=m.crypto;
+  var sc=document.getElementById('bot-mkt-stocks');if(sc)sc.checked=m.stocks;
+}
+
+window.setPosFilter=function(f,btn){
+  _posFilter=f;
+  document.querySelectorAll('.pos-filter-btn').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  updatePos();
+};
+
 function posSparkline(assetId,up){
   var d=mkt==='crypto'?(ohlc[assetId]||[]):(stkData[assetId]||[]);
   if(liveCandles[assetId]&&liveCandles[assetId].length>5)d=liveCandles[assetId];
@@ -1526,9 +1566,12 @@ function posSparkline(assetId,up){
 }
 
 function updatePos(){var el=document.getElementById('pos-list');if(!el)return;
-  if(!account.positions.length){el.innerHTML='<div class="text-t2 text-center py-4" style="font-size:var(--fs-sm)">No open positions</div>';return;}
+  var filtered=account.positions;
+  if(_posFilter==='crypto')filtered=filtered.filter(function(p){return isCryptoPos(p);});
+  else if(_posFilter==='stocks')filtered=filtered.filter(function(p){return !isCryptoPos(p);});
+  if(!filtered.length){el.innerHTML='<div class="text-t2 text-center py-4" style="font-size:var(--fs-sm)">No '+(_posFilter==='all'?'open':_posFilter)+' positions</div>';return;}
   var posIdx=0;
-  el.innerHTML=account.positions.map(function(p){
+  el.innerHTML=filtered.map(function(p){
     var pr=prOf(p.id),invested=p.avgPrice*p.qty,mktVal=pr?pr*p.qty:0,pnl=mktVal-invested,pct=invested?(pnl/invested)*100:0;
     var c=pnl>=0?'grn':'red';
     var idx=posIdx++;
@@ -2089,6 +2132,11 @@ function updateBotPerf(){
 }
 
 function runBot(){if(!bot.on)return;
+
+  // Check if bot is enabled for current market
+  var botMarkets=getBotMarkets();
+  if(mkt==='crypto'&&!botMarkets.crypto){blog('Bot skipped — crypto trading disabled');updateNextMoves();return;}
+  if(mkt==='stocks'&&!botMarkets.stocks){blog('Bot skipped — stocks trading disabled');updateNextMoves();return;}
 
   // Batch 6: Check pending orders every tick
   checkPendingOrders();
@@ -5235,6 +5283,7 @@ try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
 loadState(); // Restore account, positions, trades, bot settings
 setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);
 onStratChange();
+loadBotMarkets();
 initTicker();
 loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
