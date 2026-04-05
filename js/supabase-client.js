@@ -62,23 +62,52 @@ var SB = {
 
   onLogin: async function() {
     console.log('Logged in as', this.user.email);
-    // Ensure paper account exists
-    await this.ensurePaperAccount();
-    // Load user data
-    await this.loadSettings();
-    await this.loadWatchlist();
-    await this.loadPositions();
-    await this.loadTrades();
-    // Load strategy performance to initialize adaptive weights (Batch 5 Task 1c)
-    if (typeof loadStrategyPerformance === 'function') await loadStrategyPerformance();
-    // Batch 6: Load all paper accounts for switcher
-    if (typeof loadPaperAccounts === 'function') await loadPaperAccounts();
+    if (typeof showSyncStatus === 'function') showSyncStatus('Syncing...');
+    try {
+      // Ensure paper account exists
+      await this.ensurePaperAccount();
+      // Load ALL user data
+      await this.loadSettings();
+      await this.loadWatchlist();
+      await this.loadPositions();
+      await this.loadTrades();
+      // Load pending orders from Supabase
+      await this.loadPendingOrders();
+      // Load price alerts from Supabase
+      await this.loadPriceAlerts();
+      // Load strategy performance to initialize adaptive weights (Batch 5 Task 1c)
+      if (typeof loadStrategyPerformance === 'function') await loadStrategyPerformance();
+      // Batch 6: Load all paper accounts for switcher
+      if (typeof loadPaperAccounts === 'function') await loadPaperAccounts();
+      // Refresh UI
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof updatePos === 'function') updatePos();
+      if (typeof updateTradeLog === 'function') updateTradeLog();
+      if (typeof renderAlerts === 'function') renderAlerts();
+      if (typeof renderPendingOrders === 'function') renderPendingOrders();
+    } catch(e) { console.error('Sync error on login:', e); }
     // Update UI
     if (typeof updateAuthUI === 'function') updateAuthUI(true);
+    if (typeof showSyncStatus === 'function') showSyncStatus('Synced');
+    setTimeout(function() { if (typeof showSyncStatus === 'function') showSyncStatus(''); }, 2000);
   },
 
-  onLogout: function() {
+  onLogout: async function() {
     console.log('Logged out');
+    // Save everything before clearing
+    try {
+      if (this.client) {
+        await this.saveSettings();
+        if (typeof wl !== 'undefined' && wl.length) await this.saveWatchlist(wl);
+        if (typeof account !== 'undefined') {
+          await this.savePositions(account.positions || []);
+          await this.updateCash(account.cash);
+        }
+        await this.savePendingOrders();
+        await this.savePriceAlerts();
+      }
+    } catch(e) { console.error('Save error on logout:', e); }
+    this.accountId = null;
     if (typeof updateAuthUI === 'function') updateAuthUI(false);
   },
 
@@ -136,6 +165,10 @@ var SB = {
         if (rc.maxPositions) setVal('r-max', rc.maxPositions);
         if (rc.trailingStopPct) setVal('r-trail', rc.trailingStopPct);
       }
+      // Restore strategy weights if saved
+      if (data.strat_weights_json && typeof bot !== 'undefined') {
+        try { var sw = JSON.parse(data.strat_weights_json); if (sw) Object.assign(bot.stratWeights, sw); } catch(e) {}
+      }
     }
   },
 
@@ -155,6 +188,7 @@ var SB = {
         maxPositions: parseInt(gv('r-max')) || 5,
       },
       updated_at: new Date().toISOString(),
+      strat_weights_json: typeof bot !== 'undefined' ? JSON.stringify(bot.stratWeights) : null,
     };
     await this.client.from('user_settings').upsert(settings, { onConflict: 'user_id' });
   },
@@ -250,6 +284,58 @@ var SB = {
   saveLog: async function(message, type) {
     if (!this.user) return;
     await this.client.from('bot_logs').insert({ user_id: this.user.id, message: message, log_type: type || 'info' });
+  },
+
+  // ---- PENDING ORDERS ----
+  savePendingOrders: async function() {
+    if (!this.user) return;
+    var orders = typeof pendingOrders !== 'undefined' ? pendingOrders : [];
+    await this.client.from('user_settings').upsert({
+      user_id: this.user.id,
+      pending_orders_json: JSON.stringify(orders),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+  },
+
+  loadPendingOrders: async function() {
+    if (!this.user) return;
+    var { data } = await this.client.from('user_settings')
+      .select('pending_orders_json').eq('user_id', this.user.id).single();
+    if (data && data.pending_orders_json) {
+      try {
+        var loaded = JSON.parse(data.pending_orders_json);
+        if (Array.isArray(loaded) && typeof pendingOrders !== 'undefined') {
+          pendingOrders.length = 0;
+          loaded.forEach(function(o) { pendingOrders.push(o); });
+        }
+      } catch(e) {}
+    }
+  },
+
+  // ---- PRICE ALERTS ----
+  savePriceAlerts: async function() {
+    if (!this.user) return;
+    var alerts = typeof priceAlerts !== 'undefined' ? priceAlerts : [];
+    await this.client.from('user_settings').upsert({
+      user_id: this.user.id,
+      price_alerts_json: JSON.stringify(alerts),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+  },
+
+  loadPriceAlerts: async function() {
+    if (!this.user) return;
+    var { data } = await this.client.from('user_settings')
+      .select('price_alerts_json').eq('user_id', this.user.id).single();
+    if (data && data.price_alerts_json) {
+      try {
+        var loaded = JSON.parse(data.price_alerts_json);
+        if (Array.isArray(loaded) && typeof priceAlerts !== 'undefined') {
+          priceAlerts.length = 0;
+          loaded.forEach(function(a) { priceAlerts.push(a); });
+        }
+      } catch(e) {}
+    }
   },
 
   // ---- PRICE CACHE ----
