@@ -77,6 +77,8 @@ var SB = {
       await this.loadPriceAlerts();
       // Load strategy performance to initialize adaptive weights (Batch 5 Task 1c)
       if (typeof loadStrategyPerformance === 'function') await loadStrategyPerformance();
+      // Load server bot state
+      if (typeof loadServerBotState === 'function') await loadServerBotState();
       // Batch 6: Load all paper accounts for switcher
       if (typeof loadPaperAccounts === 'function') await loadPaperAccounts();
       // Refresh UI
@@ -249,6 +251,9 @@ var SB = {
           amount: parseFloat(t.amount), fees: parseFloat(t.fees),
           pnl: t.pnl !== null ? parseFloat(t.pnl) : undefined,
           time: new Date(t.created_at).toLocaleTimeString(),
+          reason: t.reason || '',
+          strategy: t.strategy || '',
+          serverBot: !!(t.reason && t.reason.indexOf('SERVER BOT') === 0),
         };
       });
       if (typeof updateTradeLog === 'function') updateTradeLog();

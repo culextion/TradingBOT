@@ -341,6 +341,17 @@ select.inp{appearance:auto}
       </div>
       <div id="bot-warn" class="text-xs text-red bg-s3 rounded p-2 hidden"></div>
       <hr class="border-bd"/>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">24/7 Server Bot</div>
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-t2 text-xs">Run when browser is closed</span>
+        <label style="position:relative;display:inline-block;width:36px;height:20px">
+          <input type="checkbox" id="server-bot-toggle" onchange="toggleServerBot(this.checked)" style="opacity:0;width:0;height:0"/>
+          <span style="position:absolute;cursor:pointer;inset:0;background:var(--s3);border-radius:10px;transition:.3s" id="server-bot-track"></span>
+          <span style="position:absolute;left:2px;top:2px;width:16px;height:16px;background:var(--t1);border-radius:50%;transition:.3s" id="server-bot-knob"></span>
+        </label>
+      </div>
+      <div id="server-bot-status" class="text-t2 text-xs mb-2"></div>
+      <hr class="border-bd"/>
       <div><label class="text-t2 text-xs block mb-1">Market</label>
         <div class="flex gap-1">
           <button class="btn flex-1 bg-s3 text-t1 bot-mkt-btn on" onclick="setBotMkt('crypto',this)" style="font-size:10px;padding:3px 8px">Crypto</button>
@@ -1599,7 +1610,8 @@ function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)ret
     var c=t.type==='BUY'?'text-blu':t.pnl>=0?'text-grn':'text-red';
     var totalCost=t.type==='BUY'?(t.amount||0):(t.qty*(t.price||0));
     var h='<div style="background:var(--s2);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:11px;border-left:3px solid '+(t.type==='BUY'?'var(--blu)':t.pnl>=0?'var(--grn)':'var(--red)')+';cursor:pointer" onclick="this.querySelector(\'.trade-detail\').style.display=this.querySelector(\'.trade-detail\').style.display===\'none\'?\'block\':\'none\'">';
-    h+='<div class="flex justify-between items-center"><div><span class="font-bold '+c+'">'+t.type+'</span> <span class="font-bold text-t1">'+t.sym+'</span> <span class="text-t2">× '+t.qty.toFixed(4)+'</span></div><div class="flex items-center gap-2"><span class="text-t2">'+t.time+'</span>';
+    var isServer=t.serverBot||(t.reason&&t.reason.indexOf('SERVER BOT')===0);
+    h+='<div class="flex justify-between items-center"><div><span class="font-bold '+c+'">'+t.type+'</span> <span class="font-bold text-t1">'+t.sym+'</span> <span class="text-t2">\u00d7 '+t.qty.toFixed(4)+'</span>'+(isServer?' <span style="background:var(--pur);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;vertical-align:middle">\u26A1 SERVER</span>':'')+'</div><div class="flex items-center gap-2"><span class="text-t2">'+t.time+'</span>';
     if(t.pnl!==undefined)h+='<span class="font-bold '+(t.pnl>=0?'text-grn':'text-red')+'">'+(t.pnl>=0?'+':'-')+'$'+fp(Math.abs(t.pnl))+'</span>';
     h+='</div></div>';
     // Expandable detail
@@ -3137,6 +3149,67 @@ async function getAuthToken(){
   var session=SB.client&&SB.client.auth.getSession?(await SB.client.auth.getSession()).data.session:null;
   return session?session.access_token:SUPABASE_ANON;
 }
+
+// ===================== 24/7 SERVER BOT TOGGLE =====================
+window.toggleServerBot=async function(enabled){
+  if(!SB.user){showToast('Sign in to use Server Bot','warning');var cb=document.getElementById('server-bot-toggle');if(cb)cb.checked=false;return;}
+  var token=await getAuthToken();
+  await fetch(SUPABASE_URL+'/rest/v1/user_settings?user_id=eq.'+SB.user.id,{
+    method:'PATCH',
+    headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({server_bot_enabled:enabled})
+  });
+  var knob=document.getElementById('server-bot-knob');
+  var track=document.getElementById('server-bot-track');
+  var statusEl=document.getElementById('server-bot-status');
+  if(enabled){
+    if(knob)knob.style.left='18px';
+    if(track)track.style.background='var(--grn)';
+    if(statusEl)statusEl.innerHTML='<span class="text-grn">&#9679; Active</span> &#8212; Bot runs every 60s on the server, even when browser is closed';
+    showToast('Server Bot enabled \u2014 trades 24/7','info');
+    blog('SERVER BOT enabled \u2014 will run even when browser is closed');
+  } else {
+    if(knob)knob.style.left='2px';
+    if(track)track.style.background='var(--s3)';
+    if(statusEl)statusEl.innerHTML='<span class="text-red">&#9679; Inactive</span>';
+    showToast('Server Bot disabled','info');
+    blog('SERVER BOT disabled');
+  }
+};
+
+window.loadServerBotState=async function(){
+  if(!SB.user)return;
+  try{
+    var token=await getAuthToken();
+    var resp=await fetch(SUPABASE_URL+'/rest/v1/user_settings?user_id=eq.'+SB.user.id+'&select=server_bot_enabled',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token}
+    });
+    var data=await resp.json();
+    if(data&&data.length&&data[0].server_bot_enabled){
+      var cb=document.getElementById('server-bot-toggle');if(cb)cb.checked=true;
+      var knob=document.getElementById('server-bot-knob');if(knob)knob.style.left='18px';
+      var track=document.getElementById('server-bot-track');if(track)track.style.background='var(--grn)';
+      var statusEl=document.getElementById('server-bot-status');
+      if(statusEl)statusEl.innerHTML='<span class="text-grn">&#9679; Active</span> &#8212; Bot runs every 60s on the server, even when browser is closed';
+    } else {
+      var statusEl=document.getElementById('server-bot-status');
+      if(statusEl)statusEl.innerHTML='<span class="text-red">&#9679; Inactive</span>';
+    }
+    // Load last server bot activity
+    var logResp=await fetch(SUPABASE_URL+'/rest/v1/bot_logs?user_id=eq.'+SB.user.id+'&message=like.SERVER+BOT*&order=created_at.desc&limit=1',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token}
+    });
+    var logs=await logResp.json();
+    if(logs&&logs.length){
+      var statusEl=document.getElementById('server-bot-status');
+      var ts=new Date(logs[0].created_at).toLocaleString();
+      if(statusEl){
+        var existing=statusEl.innerHTML;
+        statusEl.innerHTML=existing+'<div class="text-t2 mt-1" style="font-size:9px">Last activity: '+ts+'</div>';
+      }
+    }
+  }catch(e){console.error('loadServerBotState error:',e);}
+};
 
 async function recordStrategyEntry(trade){
   if(!SB.user||!trade)return;
