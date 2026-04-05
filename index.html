@@ -60,6 +60,54 @@ select.inp{appearance:auto}
 @keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
 /* Sparkline in position cards (Task 4b) */
 .pos-spark{flex-shrink:0}
+/* Watchlist flash animations (Batch 4 Task 2a) */
+@keyframes wlFlashGreen{0%{background:rgba(63,185,80,.3)}100%{background:transparent}}
+@keyframes wlFlashRed{0%{background:rgba(248,81,73,.3)}100%{background:transparent}}
+.wl-flash-grn{animation:wlFlashGreen .8s ease-out}
+.wl-flash-red{animation:wlFlashRed .8s ease-out}
+/* Bot status widget (Batch 4 Task 4) */
+.bot-widget{position:fixed;bottom:16px;right:16px;z-index:100;font-family:'Inter',system-ui,sans-serif}
+.bot-widget-pill{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border:1px solid var(--bd);border-radius:20px;cursor:pointer;font-size:11px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);transition:all .2s}
+.bot-widget-pill:hover{border-color:var(--blu);box-shadow:0 4px 20px rgba(88,166,255,.15)}
+.bot-widget-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.bot-widget-panel{position:absolute;bottom:calc(100% + 8px);right:0;width:320px;background:var(--s1);border:1px solid var(--bd);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.35);display:none;overflow:hidden}
+.bot-widget-panel.open{display:block}
+/* Mobile responsive (Batch 4 Task 3) */
+@media(max-width:1024px){
+  #page-bot>.grid{grid-template-columns:1fr !important;grid-template-rows:auto !important;height:auto !important}
+  #page-bot>.grid>.panel:first-child{grid-row:auto !important}
+  #page-bot>.grid>*{grid-column:auto !important}
+  #page-bot>.grid .grid-cols-5{grid-template-columns:repeat(3,1fr)}
+  #page-bot>.grid .grid-cols-3{grid-template-columns:1fr}
+  .bot-sidebar-collapse{cursor:pointer}
+  .bot-sidebar-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
+  .bot-sidebar-body.open{max-height:2000px}
+  #page-analysis .grid-cols-2{grid-template-columns:1fr !important}
+  #page-analysis .col-span-2{grid-column:auto !important}
+  #page-analysis .grid-cols-3{grid-template-columns:1fr !important}
+  #page-analysis .grid-cols-4{grid-template-columns:repeat(2,1fr) !important}
+  #page-dashboard{flex-direction:column}
+  #page-dashboard>aside{width:100%;max-height:200px;border-right:none;border-bottom:1px solid var(--bd)}
+  #page-dashboard>.flex-1{grid-template-columns:1fr !important;grid-template-rows:auto !important}
+  #page-dashboard .grid-cols-3{grid-template-columns:1fr !important}
+  #page-dashboard .col-span-2{grid-column:auto !important}
+}
+@media(max-width:768px){
+  header{padding:4px 8px !important;flex-wrap:wrap;gap:4px}
+  header .flex.items-center.gap-0\\.5{flex-wrap:wrap}
+  header .flex.items-center.gap-3{gap:6px}
+  header .flex.items-center.gap-3>.text-right>.text-t2{display:none}
+  header .flex.items-center.gap-3>.text-right>div:not(.text-t2){font-size:11px}
+  .nav-tab{padding:6px 10px;font-size:10px;white-space:nowrap}
+  header .flex.items-center.ml-6{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:1;min-width:0}
+  header .flex.items-center.ml-6::-webkit-scrollbar{display:none}
+  header svg[width="28"]{width:22px;height:22px}
+  header span[style*="font-size:16px"]{font-size:13px !important}
+  #page-bot>.grid .grid-cols-5{grid-template-columns:repeat(2,1fr) !important}
+  .bot-widget-panel{width:280px}
+  #page-settings .grid-cols-2{grid-template-columns:1fr !important}
+  #page-settings .col-span-2{grid-column:auto !important}
+}
 </style>
 </head>
 <body class="dark">
@@ -128,7 +176,15 @@ select.inp{appearance:auto}
       <div id="search-drop" class="search-drop"></div>
     </div>
     <div class="p-2 flex-1 overflow-y-auto">
-      <div class="flex justify-between mb-1"><span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span></div>
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span>
+        <div class="flex gap-0.5" id="wl-sort-btns">
+          <button class="tf wl-sort-btn" onclick="setWLSort('name',this)" style="font-size:8px;padding:1px 4px">Name</button>
+          <button class="tf wl-sort-btn" onclick="setWLSort('price',this)" style="font-size:8px;padding:1px 4px">Price</button>
+          <button class="tf on wl-sort-btn" onclick="setWLSort('change',this)" style="font-size:8px;padding:1px 4px">Change</button>
+          <button class="tf wl-sort-btn" onclick="setWLSort('volume',this)" style="font-size:8px;padding:1px 4px">Vol</button>
+        </div>
+      </div>
       <div id="watchlist"></div>
     </div>
     <div class="p-2 border-t border-bd">
@@ -284,8 +340,29 @@ select.inp{appearance:auto}
 
   <!-- Allocation + Per-Asset P&L row -->
   <div class="panel">
-    <div class="ph"><span>Asset Allocation</span></div>
-    <div class="pb p-2 overflow-y-auto" id="alloc-chart"><div class="flex items-center justify-center h-full text-t2 text-xs py-4">Start trading to see allocation</div></div>
+    <div class="ph">
+      <div class="flex gap-1">
+        <button class="tf on alloc-tab" onclick="showAllocView('alloc',this)">Allocation</button>
+        <button class="tf alloc-tab" onclick="showAllocView('rebalance',this)">Rebalance</button>
+      </div>
+    </div>
+    <div class="pb p-2 overflow-y-auto" style="position:relative">
+      <div id="alloc-chart"><div class="flex items-center justify-center h-full text-t2 text-xs py-4">Start trading to see allocation</div></div>
+      <div id="rebalance-panel" style="display:none">
+        <div class="text-t2 text-xs font-bold uppercase mb-2">Target Allocation</div>
+        <div id="rebal-targets" class="mb-2"></div>
+        <div class="flex gap-2 mb-3">
+          <select id="rebal-add-asset" class="inp" style="flex:1;font-size:10px"></select>
+          <input id="rebal-add-pct" class="inp" type="number" placeholder="%" min="0" max="100" style="width:50px;font-size:10px"/>
+          <button class="btn btn-b" onclick="addRebalTarget()" style="font-size:10px;padding:3px 8px">Add</button>
+        </div>
+        <div class="text-t2 text-xs font-bold uppercase mb-1">Current vs Target</div>
+        <div id="rebal-comparison" class="mb-2"><div class="text-t2 text-xs text-center">Set targets above</div></div>
+        <div class="text-t2 text-xs font-bold uppercase mb-1">Suggested Trades</div>
+        <div id="rebal-suggestions" class="mb-2"><div class="text-t2 text-xs text-center">Set targets to see suggestions</div></div>
+        <button id="rebal-auto-btn" class="btn btn-b w-full" onclick="autoRebalance()" style="font-size:11px;display:none">Auto-Rebalance All</button>
+      </div>
+    </div>
   </div>
   <div class="panel">
     <div class="ph"><span>P&L by Asset</span></div>
@@ -592,6 +669,28 @@ select.inp{appearance:auto}
   </div>
   <p class="text-t2 text-xs mt-3 text-center">Sign in to sync watchlists, trades, and bot settings across devices.</p>
 </div>
+</div>
+
+<!-- Bot Status Widget (Batch 4 Task 4) -->
+<div id="bot-widget" class="bot-widget">
+  <div class="bot-widget-pill" onclick="toggleBotWidget()">
+    <span id="bw-dot" class="dot bg-red"></span>
+    <span id="bw-status">Bot: Stopped</span>
+    <span id="bw-pnl" class="text-t2" style="font-size:10px">$0.00</span>
+  </div>
+  <div id="bw-panel" class="bot-widget-panel">
+    <div class="ph"><span>Bot Status</span><button onclick="toggleBotWidget()" style="background:none;border:none;color:var(--t2);cursor:pointer;font-size:14px">&times;</button></div>
+    <div class="pb p-3" style="max-height:320px;overflow-y:auto">
+      <div class="flex gap-2 mb-3">
+        <button id="bw-toggle" class="btn btn-g flex-1" onclick="if(bot.on){stopBot()}else{startBot()};updateBotWidget()">Start Bot</button>
+        <a class="btn btn-b flex-1 text-center" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="document.querySelectorAll('.nav-tab')[1].click();toggleBotWidget()">Go to Bot</a>
+      </div>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">Open Positions (<span id="bw-poscount">0</span>)</div>
+      <div id="bw-positions" class="mb-3" style="font-size:11px"><div class="text-t2 text-xs">No positions</div></div>
+      <div class="text-t2 text-xs font-bold uppercase mb-1">Recent Activity</div>
+      <div id="bw-logs" style="font-size:10px"><div class="text-t2 text-xs">No activity</div></div>
+    </div>
+  </div>
 </div>
 
 <script src="js/fees.js"></script>
@@ -2035,7 +2134,7 @@ window.showPage=function(p,btn){
   ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard')setTimeout(resizeCharts,200);
-  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();
+  if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();populateRebalAssets();renderRebalance();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
   if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();}
   if(p==='settings'){
@@ -2556,6 +2655,265 @@ async function loadAllHistorical(){
   renderHistoricalContext();
 }
 
+// ===================== WATCHLIST ENHANCEMENTS (Batch 4 Task 2) =====================
+var _wlSort='change'; // default sort
+var _wlPrevPrices={}; // track 5-min prices for flash detection
+
+try{var savedSort=localStorage.getItem('ct_wl_sort');if(savedSort)_wlSort=savedSort;}catch(e){}
+
+window.setWLSort=function(sort,btn){
+  _wlSort=sort;
+  document.querySelectorAll('.wl-sort-btn').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  try{localStorage.setItem('ct_wl_sort',sort)}catch(e){}
+  updateWL();
+};
+
+// Override updateWL to add sorting, flash, portfolio badges, and 24h labels
+var _origUpdateWL=updateWL;
+updateWL=function(){
+  var el=document.getElementById('watchlist');if(!el)return;
+  var items=getWL().map(function(a){
+    var p=prOf(a.id),ch=chOf(a.id);
+    return{a:a,p:p,ch:ch};
+  });
+  // Sort
+  if(_wlSort==='name')items.sort(function(a,b){return a.a.sym.localeCompare(b.a.sym)});
+  else if(_wlSort==='price')items.sort(function(a,b){return(b.p||0)-(a.p||0)});
+  else if(_wlSort==='change')items.sort(function(a,b){return Math.abs(b.ch||0)-Math.abs(a.ch||0)});
+  else if(_wlSort==='volume')items.sort(function(a,b){return Math.abs(b.ch||0)-Math.abs(a.ch||0)}); // approx by change
+
+  el.innerHTML=items.map(function(item){
+    var a=item.a,p=item.p,ch=item.ch,u=ch>=0,on=a.id===sel;
+    var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];var sp=spark(d,u);
+    var isCustom=wl.some(function(w){return w.id===a.id});
+    var rmBtn=isCustom?'<button onclick="event.stopPropagation();rmWL(\''+a.id+'\')" style="position:absolute;top:2px;right:2px;background:none;border:none;color:var(--t2);cursor:pointer;font-size:12px;line-height:1;padding:2px 4px;border-radius:3px;opacity:0;transition:opacity .15s" class="wl-rm" title="Remove from watchlist">&times;</button>':'';
+
+    // Flash detection: check if 5-min change > 2%
+    var flashClass='';
+    var prev5=_wlPrevPrices[a.id];
+    if(prev5&&p){
+      var pctChg5=((p-prev5)/prev5)*100;
+      if(Math.abs(pctChg5)>2){flashClass=pctChg5>0?' wl-flash-grn':' wl-flash-red';}
+    }
+
+    // Portfolio badge: show if user holds this asset
+    var pos=account.positions.find(function(pp){return pp.id===a.id});
+    var posBadge='';
+    if(pos&&p){
+      var upnl=(p-pos.avgPrice)*pos.qty;var uc=upnl>=0?'grn':'red';
+      posBadge='<div style="font-size:8px;display:flex;align-items:center;gap:2px;margin-top:1px"><span style="width:5px;height:5px;border-radius:50%;background:var(--blu);display:inline-block"></span><span class="text-'+uc+'">'+(upnl>=0?'+':'-')+'$'+fp(Math.abs(upnl))+'</span></div>';
+    }
+
+    return'<div class="wl'+(on?' on':'')+flashClass+'" onclick="_sel(\''+a.id+'\')" style="position:relative">'+rmBtn+'<div><div class="font-bold text-t1">'+a.sym+'</div><div class="text-t2" style="font-size:9px">'+a.name+'</div>'+posBadge+'</div><div class="text-right flex items-center gap-1">'+sp+'<div><div class="font-bold" style="font-size:11px;font-variant-numeric:tabular-nums">$'+fp(p)+'</div><div class="'+(u?'text-grn':'text-red')+'" style="font-size:9px;font-variant-numeric:tabular-nums"><span style="font-size:7px;color:var(--t2);margin-right:2px">24h</span>'+(u?'+':'')+ch.toFixed(2)+'%</div></div></div></div>';
+  }).join('');
+};
+// Snapshot prices for 5-min flash detection every 5 minutes
+setInterval(function(){
+  getWL().forEach(function(a){var p=prOf(a.id);if(p)_wlPrevPrices[a.id]=p;});
+},300000);
+// Initial snapshot
+setTimeout(function(){getWL().forEach(function(a){var p=prOf(a.id);if(p)_wlPrevPrices[a.id]=p;});},5000);
+
+// ===================== PORTFOLIO REBALANCING (Batch 4 Task 1) =====================
+var rebalTargets=[]; // [{id, sym, pct}]
+try{var rt=localStorage.getItem('ct_target_alloc');if(rt)rebalTargets=JSON.parse(rt);}catch(e){}
+
+window.showAllocView=function(view,btn){
+  document.querySelectorAll('.alloc-tab').forEach(function(b){b.classList.remove('on')});
+  if(btn)btn.classList.add('on');
+  document.getElementById('alloc-chart').style.display=view==='alloc'?'':'none';
+  document.getElementById('rebalance-panel').style.display=view==='rebalance'?'':'none';
+  if(view==='rebalance')renderRebalance();
+};
+
+function populateRebalAssets(){
+  var sel=document.getElementById('rebal-add-asset');if(!sel)return;
+  var wla=getWL();
+  sel.innerHTML='<option value="_cash">Cash</option>'+wla.map(function(a){return'<option value="'+a.id+'">'+a.sym+'</option>'}).join('');
+}
+
+function saveRebalTargets(){
+  try{localStorage.setItem('ct_target_alloc',JSON.stringify(rebalTargets))}catch(e){}
+}
+
+window.addRebalTarget=function(){
+  var id=gv('rebal-add-asset');if(!id)return;
+  var pct=parseFloat(gv('rebal-add-pct'));if(!pct||pct<=0||pct>100){showToast('Enter a valid percentage (1-100)','warning');return;}
+  // Check total
+  var total=rebalTargets.reduce(function(s,t){return s+t.pct},0)+pct;
+  if(total>100){showToast('Total allocation cannot exceed 100% (currently '+rebalTargets.reduce(function(s,t){return s+t.pct},0)+'%)','warning');return;}
+  // Remove existing entry for same asset
+  rebalTargets=rebalTargets.filter(function(t){return t.id!==id});
+  var sym=id==='_cash'?'Cash':(findA(id)||{sym:id}).sym;
+  rebalTargets.push({id:id,sym:sym,pct:pct});
+  saveRebalTargets();
+  document.getElementById('rebal-add-pct').value='';
+  renderRebalance();
+};
+
+window.removeRebalTarget=function(id){
+  rebalTargets=rebalTargets.filter(function(t){return t.id!==id});
+  saveRebalTargets();renderRebalance();
+};
+
+function renderRebalance(){
+  // Targets list
+  var tEl=document.getElementById('rebal-targets');if(!tEl)return;
+  var totalPct=rebalTargets.reduce(function(s,t){return s+t.pct},0);
+  if(!rebalTargets.length){tEl.innerHTML='<div class="text-t2 text-xs text-center">No targets set. Add assets below.</div>';}
+  else{
+    var h='';
+    rebalTargets.forEach(function(t){
+      h+='<div class="flex items-center justify-between bg-s2 rounded px-2 py-1 mb-1" style="font-size:10px">'+
+        '<span class="font-bold text-t1">'+t.sym+'</span>'+
+        '<div class="flex items-center gap-2">'+
+          '<div class="bg-s3 rounded-full" style="width:60px;height:5px"><div class="bg-blu rounded-full" style="height:5px;width:'+t.pct+'%"></div></div>'+
+          '<span class="text-t1 font-bold" style="min-width:30px;text-align:right">'+t.pct+'%</span>'+
+          '<button onclick="removeRebalTarget(\''+t.id+'\')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:0 2px">&times;</button>'+
+        '</div></div>';
+    });
+    h+='<div class="text-t2" style="font-size:9px;text-align:right">Total: '+totalPct.toFixed(0)+'%'+(totalPct<100?' <span class="text-ylw">('+((100-totalPct).toFixed(0))+'% unallocated)</span>':'')+'</div>';
+    tEl.innerHTML=h;
+  }
+
+  // Current vs Target comparison
+  var cEl=document.getElementById('rebal-comparison');if(!cEl)return;
+  if(!rebalTargets.length){cEl.innerHTML='<div class="text-t2 text-xs text-center">Set targets above</div>';return;}
+  var pv=portVal();if(pv<=0){cEl.innerHTML='<div class="text-t2 text-xs text-center">No portfolio data</div>';return;}
+  var ch='';
+  rebalTargets.forEach(function(t){
+    var currentVal=0;
+    if(t.id==='_cash'){currentVal=account.cash;}
+    else{var pos=account.positions.find(function(p){return p.id===t.id});if(pos)currentVal=pos.qty*prOf(pos.id);}
+    var currentPct=(currentVal/pv)*100;
+    var deviation=currentPct-t.pct;
+    var devColor=Math.abs(deviation)<2?'text-t2':deviation>0?'text-ylw':'text-red';
+    ch+='<div style="margin-bottom:4px;font-size:10px">'+
+      '<div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+t.sym+'</span><span class="'+devColor+'">'+(deviation>=0?'+':'')+deviation.toFixed(1)+'%</span></div>'+
+      '<div class="flex gap-1 items-center">'+
+        '<span class="text-t2" style="font-size:8px;width:28px">Now</span>'+
+        '<div class="flex-1 bg-s3 rounded-full" style="height:6px"><div class="rounded-full" style="height:6px;width:'+Math.min(100,currentPct).toFixed(1)+'%;background:var(--blu)"></div></div>'+
+        '<span style="font-size:9px;min-width:30px;text-align:right">'+currentPct.toFixed(1)+'%</span>'+
+      '</div>'+
+      '<div class="flex gap-1 items-center">'+
+        '<span class="text-t2" style="font-size:8px;width:28px">Tgt</span>'+
+        '<div class="flex-1 bg-s3 rounded-full" style="height:6px"><div class="rounded-full" style="height:6px;width:'+t.pct+'%;background:var(--grn);opacity:.6"></div></div>'+
+        '<span style="font-size:9px;min-width:30px;text-align:right">'+t.pct+'%</span>'+
+      '</div></div>';
+  });
+  cEl.innerHTML=ch;
+
+  // Rebalance suggestions
+  var sEl=document.getElementById('rebal-suggestions');if(!sEl)return;
+  var suggestions=calcRebalSuggestions();
+  if(!suggestions.length){sEl.innerHTML='<div class="text-t2 text-xs text-center">Portfolio is balanced!</div>';document.getElementById('rebal-auto-btn').style.display='none';return;}
+  var sh='';
+  suggestions.forEach(function(s){
+    var execBtn='';
+    if(s.action==='buy'){
+      execBtn='<button class="btn btn-g" onclick="buyA(\''+s.id+'\','+s.amount.toFixed(2)+',\'Rebalance: buy $'+fp(s.amount)+' of '+s.sym+'\')" style="font-size:9px;padding:2px 8px">Execute</button>';
+    }else if(s.action==='sell'&&s.id!=='_cash'){
+      var pos=account.positions.find(function(p){return p.id===s.id});
+      if(pos){
+        var qty=s.amount/prOf(s.id);if(qty>pos.qty)qty=pos.qty;
+        execBtn='<button class="btn btn-r" onclick="sellA(\''+s.id+'\','+qty.toFixed(6)+',\'Rebalance: sell $'+fp(s.amount)+' of '+s.sym+'\')" style="font-size:9px;padding:2px 8px">Execute</button>';
+      }
+    }
+    sh+='<div class="flex items-center justify-between bg-s2 rounded px-2 py-1 mb-1" style="font-size:10px">'+
+      '<div><span class="font-bold '+(s.action==='buy'?'text-grn':'text-red')+'">'+s.action.toUpperCase()+'</span> <span class="text-t1 font-bold">'+s.sym+'</span> <span class="text-t2">$'+fp(s.amount)+'</span></div>'+
+      execBtn+'</div>';
+  });
+  sEl.innerHTML=sh;
+  document.getElementById('rebal-auto-btn').style.display=suggestions.length?'':'none';
+}
+
+function calcRebalSuggestions(){
+  var pv=portVal();if(pv<=0||!rebalTargets.length)return[];
+  var suggestions=[];
+  rebalTargets.forEach(function(t){
+    var currentVal=0;
+    if(t.id==='_cash'){currentVal=account.cash;}
+    else{var pos=account.positions.find(function(p){return p.id===t.id});if(pos)currentVal=pos.qty*prOf(pos.id);}
+    var targetVal=pv*(t.pct/100);
+    var diff=targetVal-currentVal;
+    if(Math.abs(diff)<10)return; // Skip tiny differences
+    if(diff>0&&t.id!=='_cash'){suggestions.push({id:t.id,sym:t.sym,action:'buy',amount:diff});}
+    else if(diff<0&&t.id!=='_cash'){suggestions.push({id:t.id,sym:t.sym,action:'sell',amount:Math.abs(diff)});}
+  });
+  return suggestions;
+}
+
+window.autoRebalance=function(){
+  var suggestions=calcRebalSuggestions();
+  if(!suggestions.length){showToast('Portfolio already balanced','info');return;}
+  var desc=suggestions.map(function(s){return s.action.toUpperCase()+' $'+fp(s.amount)+' of '+s.sym}).join('\n');
+  if(!confirm('Execute all rebalancing trades?\n\n'+desc+'\n\nContinue?'))return;
+  // Execute sells first, then buys
+  var sells=suggestions.filter(function(s){return s.action==='sell'});
+  var buys=suggestions.filter(function(s){return s.action==='buy'});
+  sells.forEach(function(s){
+    var pos=account.positions.find(function(p){return p.id===s.id});
+    if(pos){var qty=s.amount/prOf(s.id);if(qty>pos.qty)qty=pos.qty;sellA(s.id,qty,'Auto-rebalance: sell $'+fp(s.amount)+' of '+s.sym);}
+  });
+  buys.forEach(function(s){
+    if(s.amount<=account.cash){buyA(s.id,s.amount,'Auto-rebalance: buy $'+fp(s.amount)+' of '+s.sym);}
+  });
+  showToast('Rebalancing complete — '+(sells.length+buys.length)+' trades executed','info');
+  setTimeout(renderRebalance,500);
+};
+
+// ===================== BOT STATUS WIDGET (Batch 4 Task 4) =====================
+var _bwOpen=false;
+
+window.toggleBotWidget=function(){
+  _bwOpen=!_bwOpen;
+  var panel=document.getElementById('bw-panel');
+  if(panel)panel.classList.toggle('open',_bwOpen);
+  if(_bwOpen)updateBotWidget();
+};
+
+function updateBotWidget(){
+  // Pill
+  var dot=document.getElementById('bw-dot');
+  var status=document.getElementById('bw-status');
+  var pnlEl=document.getElementById('bw-pnl');
+  if(dot)dot.className='dot '+(bot.on?'bg-grn pulse':'bg-red');
+  if(status)status.textContent='Bot: '+(bot.on?'Running':'Stopped');
+  if(pnlEl){
+    var pnl=bot.pnl;
+    pnlEl.textContent=(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl));
+    pnlEl.className=(pnl>=0?'text-grn':'text-red');
+    pnlEl.style.fontSize='10px';
+  }
+  // Panel
+  var toggle=document.getElementById('bw-toggle');
+  if(toggle){toggle.textContent=bot.on?'Stop Bot':'Start Bot';toggle.className=bot.on?'btn btn-r flex-1':'btn btn-g flex-1';}
+  var pcEl=document.getElementById('bw-poscount');
+  if(pcEl)pcEl.textContent=account.positions.length;
+  // Positions list
+  var posEl=document.getElementById('bw-positions');
+  if(posEl){
+    if(!account.positions.length){posEl.innerHTML='<div class="text-t2 text-xs">No positions</div>';}
+    else{posEl.innerHTML=account.positions.map(function(p){
+      var pr=prOf(p.id);var pnl=pr?(pr-p.avgPrice)*p.qty:0;var c=pnl>=0?'grn':'red';
+      return'<div class="flex justify-between items-center" style="padding:2px 0;border-bottom:1px solid var(--bd);font-size:10px"><span class="font-bold text-t1">'+p.sym+'</span><span class="text-'+c+' font-bold">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+'</span></div>';
+    }).join('');}
+  }
+  // Recent logs
+  var logEl=document.getElementById('bw-logs');
+  if(logEl){
+    var recent=bot.logs.slice(0,3);
+    if(!recent.length){logEl.innerHTML='<div class="text-t2 text-xs">No activity</div>';}
+    else{logEl.innerHTML=recent.map(function(l){
+      return'<div class="text-xs mb-1" style="font-size:9px"><span class="text-t2">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>';
+    }).join('');}
+  }
+}
+
+// Update widget every 5 seconds
+setInterval(updateBotWidget,5000);
+
 // ===================== INIT =====================
 ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
@@ -2565,7 +2923,9 @@ onStratChange();
 initTicker();
 loadAll();
 updateDcaTargets();
-loadPriceAlerts();renderAlerts();populateAlertAssets();
+loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
+// Restore watchlist sort button state
+(function(){var btns=document.querySelectorAll('.wl-sort-btn');btns.forEach(function(b){b.classList.remove('on');if(b.textContent.toLowerCase()===_wlSort||(_wlSort==='volume'&&b.textContent==='Vol'))b.classList.add('on')});})();
 // Batch 3: Load S/R levels and historical context from Supabase (async, non-blocking)
 setTimeout(function(){loadAllSupportResistance();},3000);
 setTimeout(function(){loadAllHistorical();},4000);
