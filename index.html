@@ -111,6 +111,29 @@ select.inp{appearance:auto}
   #page-settings .grid-cols-2{grid-template-columns:1fr !important}
   #page-settings .col-span-2{grid-column:auto !important}
 }
+/* Batch 6: Account switcher */
+.acct-switcher{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.acct-switcher select{flex:1;min-width:0}
+.acct-card{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:10px;cursor:pointer;transition:border-color .2s}
+.acct-card:hover{border-color:var(--blu)}
+.acct-card.active{border-color:var(--grn);border-left:3px solid var(--grn)}
+/* Batch 6: Order book */
+.order-row{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:var(--s2);border-radius:4px;margin-bottom:3px;font-size:10px;border-left:3px solid var(--blu)}
+.order-row.stop{border-left-color:var(--ylw)}
+.order-row .order-cancel{background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;padding:0 4px}
+/* Batch 6: Risk analytics */
+.risk-card{background:var(--s2);border-radius:6px;padding:8px 10px;font-size:11px}
+.risk-bar{height:6px;border-radius:3px;background:var(--s3);overflow:hidden;margin-top:3px}
+.risk-bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.corr-matrix{display:grid;gap:1px;font-size:8px}
+.corr-cell{padding:2px;text-align:center;border-radius:2px;font-weight:600}
+/* Batch 6: Schedule toggle */
+.toggle-switch{position:relative;display:inline-block;width:32px;height:18px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:var(--s3);border-radius:9px;transition:.3s}
+.toggle-slider:before{content:'';position:absolute;height:14px;width:14px;left:2px;bottom:2px;background:var(--t2);border-radius:50%;transition:.3s}
+.toggle-switch input:checked+.toggle-slider{background:var(--blu)}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(14px);background:#fff}
 </style>
 </head>
 <body class="dark">
@@ -246,12 +269,22 @@ select.inp{appearance:auto}
 
 <!-- PAGE: BOT -->
 <div id="page-bot" autocomplete="off" class="h-full overflow-y-auto p-3" style="display:none">
-<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto auto;height:calc(100vh - 72px)">
+<div class="grid gap-3" style="grid-template-columns:280px 1fr 1fr;grid-template-rows:auto auto auto auto 1fr auto auto auto;height:calc(100vh - 72px)">
 
   <!-- Bot Control (left sidebar, spans all rows) -->
-  <div class="panel" style="grid-row:1/8;overflow-y:auto">
+  <div class="panel" style="grid-row:1/9;overflow-y:auto">
     <div class="ph"><span>Bot Control</span></div>
     <div class="pb p-3 space-y-3 overflow-y-auto">
+      <!-- Account Switcher (Batch 6 Task 1) -->
+      <div>
+        <label class="text-t2 block mb-1" style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Paper Account</label>
+        <div class="acct-switcher">
+          <select id="acct-sel" class="inp" onchange="switchPaperAccount(this.value)" style="font-size:11px"></select>
+          <button class="btn" style="background:var(--s3);color:var(--blu);padding:4px 8px;font-size:10px;white-space:nowrap" onclick="createPaperAccount()" title="New Account">+ New</button>
+        </div>
+        <div id="acct-summaries" style="margin-top:4px"></div>
+      </div>
+      <hr class="border-bd"/>
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
       <div>
         <label class="text-t2 block mb-1" style="font-size:9px">Trading Mode</label>
@@ -438,8 +471,14 @@ select.inp{appearance:auto}
     <div class="pb p-2 overflow-y-auto" id="key-levels"><div class="text-t2 text-xs text-center py-2">Calculating support/resistance...</div></div>
   </div>
 
-  <!-- Price Alerts Panel (Task 3) -->
+  <!-- Risk Analytics (Batch 6 Task 3) -->
   <div class="panel" style="grid-column:3/4">
+    <div class="ph"><span>Risk Analytics</span><span class="text-ylw pulse" style="font-size:9px">LIVE</span></div>
+    <div class="pb p-2 overflow-y-auto" id="risk-analytics"><div class="text-t2 text-xs text-center py-2">Start trading to see risk metrics</div></div>
+  </div>
+
+  <!-- Price Alerts Panel (Task 3) -->
+  <div class="panel" style="grid-column:2/3">
     <div class="ph"><span>Price Alerts</span><span id="alerts-count" class="text-t2" style="font-size:9px">0 active</span></div>
     <div class="pb p-2 overflow-y-auto">
       <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
@@ -464,6 +503,38 @@ select.inp{appearance:auto}
     </div>
   </div>
 
+  <!-- Pending Orders (Batch 6 Task 2) -->
+  <div class="panel" style="grid-column:3/4;min-height:0">
+    <div class="ph"><span>Pending Orders</span><span id="orders-count" class="text-t2" style="font-size:9px">0 pending</span></div>
+    <div class="pb p-2 overflow-y-auto">
+      <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px">
+        <div style="flex:1;min-width:100px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Asset</label>
+          <select id="order-asset" class="inp" style="font-size:11px"></select>
+        </div>
+        <div style="width:90px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Type</label>
+          <select id="order-type" class="inp" style="font-size:11px">
+            <option value="limit_buy">Limit Buy</option>
+            <option value="limit_sell">Limit Sell</option>
+            <option value="stop_buy">Stop Buy</option>
+            <option value="stop_sell">Stop Sell</option>
+          </select>
+        </div>
+        <div style="width:90px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Price ($)</label>
+          <input id="order-price" class="inp" type="number" placeholder="70000" step="any" style="font-size:11px"/>
+        </div>
+        <div style="width:80px">
+          <label class="text-t2" style="font-size:9px;display:block;margin-bottom:2px">Amount ($)</label>
+          <input id="order-amount" class="inp" type="number" placeholder="1000" step="any" style="font-size:11px" value="1000"/>
+        </div>
+        <button class="btn btn-b" onclick="placeLimitOrder()" style="padding:5px 12px;font-size:11px">Place</button>
+      </div>
+      <div id="orders-list"><div class="text-t2 text-xs text-center py-1">No pending orders</div></div>
+    </div>
+  </div>
+
   <!-- Trade History (bottom-right) -->
   <div class="panel" style="min-height:0">
     <div class="ph"><span>Trade History</span></div>
@@ -479,7 +550,7 @@ select.inp{appearance:auto}
     </div>
   </div>
 
-  <!-- Bot Activity Log (full width bottom) -->
+  <!-- Bot Activity Log (full width bottom, Batch 6: spans correctly) -->
   <div class="panel" style="grid-column:2/4;max-height:140px">
     <div class="ph"><span>Bot Activity Log</span></div>
     <div class="pb p-2 overflow-y-auto" id="bot-log" style="font-family:'SF Mono','Fira Code',monospace;font-size:11px"><div class="text-t2 text-xs text-center">Start the bot to see activity here</div></div>
@@ -685,13 +756,58 @@ select.inp{appearance:auto}
     </div>
   </div>
 
+  <!-- Bot Schedule (Batch 6 Task 4c) -->
+  <div class="panel">
+    <div class="ph"><span>Bot Trading Schedule</span></div>
+    <div class="pb p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <span style="font-size:var(--fs-sm)">Enable Trading Hours</span>
+        <label class="toggle-switch"><input type="checkbox" id="sched-enabled" onchange="saveSchedule()"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="text-t2 block mb-1" style="font-size:var(--fs-xs)">Start Time (EST)</label>
+          <input type="time" id="sched-start" class="inp" value="09:00" onchange="saveSchedule()" style="font-size:var(--fs-sm)"/>
+        </div>
+        <div>
+          <label class="text-t2 block mb-1" style="font-size:var(--fs-xs)">End Time (EST)</label>
+          <input type="time" id="sched-end" class="inp" value="17:00" onchange="saveSchedule()" style="font-size:var(--fs-sm)"/>
+        </div>
+      </div>
+      <div class="text-t2" style="font-size:var(--fs-xs)">Active Days</div>
+      <div class="flex gap-1 flex-wrap">
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="1" checked onchange="saveSchedule()" style="width:12px;height:12px">Mon</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="2" checked onchange="saveSchedule()" style="width:12px;height:12px">Tue</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="3" checked onchange="saveSchedule()" style="width:12px;height:12px">Wed</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="4" checked onchange="saveSchedule()" style="width:12px;height:12px">Thu</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="5" checked onchange="saveSchedule()" style="width:12px;height:12px">Fri</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="6" onchange="saveSchedule()" style="width:12px;height:12px">Sat</label>
+        <label class="flex items-center gap-1 bg-s3 rounded px-2 py-1 text-xs cursor-pointer"><input type="checkbox" class="sched-day" value="0" onchange="saveSchedule()" style="width:12px;height:12px">Sun</label>
+      </div>
+      <div id="sched-status" class="text-t2" style="font-size:var(--fs-xs)">Bot will trade anytime (schedule disabled)</div>
+    </div>
+  </div>
+
+  <!-- Notification Preferences (Batch 6 Task 4d) -->
+  <div class="panel">
+    <div class="ph"><span>Notification Preferences</span></div>
+    <div class="pb p-4 space-y-3">
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Toast on Trade</span><label class="toggle-switch"><input type="checkbox" id="notif-toast-trade" checked onchange="saveNotifPrefs()"><span class="toggle-slider"></span></label></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Sound on Alert Trigger</span><label class="toggle-switch"><input type="checkbox" id="notif-sound-alert" checked onchange="saveNotifPrefs()"><span class="toggle-slider"></span></label></div>
+      <div class="flex items-center justify-between"><span style="font-size:var(--fs-sm)">Sound on Trade</span><label class="toggle-switch"><input type="checkbox" id="notif-sound-trade" onchange="saveNotifPrefs()"><span class="toggle-slider"></span></label></div>
+      <p class="text-t2" style="font-size:var(--fs-xs)">Controls how the app notifies you of events. Toast notifications appear in the top-right corner.</p>
+    </div>
+  </div>
+
   <!-- Data & Privacy -->
   <div class="panel col-span-2">
     <div class="ph"><span>Data & Privacy</span></div>
     <div class="pb p-4">
-      <div class="flex gap-3">
+      <div class="flex gap-3 flex-wrap">
         <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="localStorage.clear();alert('Local cache cleared. Reload the page.')">Clear Local Cache</button>
-        <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="var d=JSON.stringify(account.trades,null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='culextrade-trades.json';a.click()">Export Trade History</button>
+        <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="var d=JSON.stringify(account.trades,null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='culextrade-trades.json';a.click()">Export as JSON</button>
+        <button class="btn btn-b" style="font-size:var(--fs-sm)" onclick="exportTradesCSV()">Export Trades as CSV</button>
+        <button class="btn btn-r" style="font-size:var(--fs-sm)" onclick="resetPaperAccount()">Reset Paper Account</button>
       </div>
       <p class="text-t2 mt-2" style="font-size:var(--fs-xs)">Your API keys are never stored in the browser. When exchange connections are enabled, credentials are encrypted and stored server-side via Supabase.</p>
     </div>
@@ -991,6 +1107,8 @@ function handleFhMessage(data,type){
       Object.keys(tileAsset).forEach(function(k){setPr('pr-'+k,tileAsset[k])});
       // Check price alerts (Batch 3 Task 3)
       checkPriceAlerts();
+      // Batch 6: Check pending orders on each price tick
+      checkPendingOrders();
     }
   }catch(ex){}
 }
@@ -1543,7 +1661,7 @@ window.setBotMkt=function(m,btn){
   mkt=m;sel=getAssets()[0].id;
   document.querySelectorAll('.bot-mkt-btn').forEach(function(b){b.classList.remove('on');b.classList.add('text-t2');b.classList.remove('text-t1');});
   btn.classList.add('on');btn.classList.add('text-t1');btn.classList.remove('text-t2');
-  loadAll();updateDcaTargets();mtPopulate();blog('Switched to '+m+' market');
+  loadAll();updateDcaTargets();mtPopulate();populateOrderAssets();blog('Switched to '+m+' market');
 };
 
 // DCA target checkboxes
@@ -1729,6 +1847,15 @@ function updateBotPerf(){
 
 function runBot(){if(!bot.on)return;
 
+  // Batch 6: Check pending orders every tick
+  checkPendingOrders();
+
+  // Batch 6: Schedule check
+  if(botSchedule.enabled&&!isWithinSchedule()){
+    blog('SCHEDULE: Outside trading hours — skipping tick');
+    return;
+  }
+
   // Task 3d: Consecutive loss protection — check if paused
   var now=Date.now();
   if(bot.pausedUntil>now){
@@ -1827,12 +1954,19 @@ function blog(msg){bot.logs.unshift({t:new Date().toLocaleTimeString(),m:msg});i
 
 // ===================== TOAST NOTIFICATIONS (Task 4a) =====================
 function showToast(msg,type){
+  // Batch 6: Respect notification prefs
+  var isTrade=(type==='buy'||type==='sell');
+  if(isTrade&&typeof notifPrefs!=='undefined'&&!notifPrefs.toastOnTrade)return;
   var c=document.getElementById('toast-container');if(!c)return;
   var t=document.createElement('div');
   t.className='toast toast-'+(type||'buy');
   t.textContent=msg;
   c.appendChild(t);
   setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},3100);
+  // Sound on trade
+  if(isTrade&&typeof notifPrefs!=='undefined'&&notifPrefs.soundOnTrade&&typeof _alertBeep!=='undefined'&&_alertBeep){
+    try{_alertBeep.currentTime=0;_alertBeep.play();}catch(e){}
+  }
 }
 
 // ===================== PERFORMANCE ANALYTICS (Task 2) =====================
@@ -2204,6 +2338,7 @@ window.showPage=function(p,btn){
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard'){setTimeout(resizeCharts,200);renderTrending();renderNewsFeed();}
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();populateRebalAssets();renderRebalance();
+    renderPendingOrders();populateOrderAssets();renderRiskAnalytics();renderAccountSwitcher();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
   if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();renderNewsFeed();populateReplayAssets();renderTradeReplay();}
   if(p==='settings'){
@@ -2211,6 +2346,7 @@ window.showPage=function(p,btn){
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
     if(si)si.style.display=SB.user?'none':'';if(so)so.style.display=SB.user?'':'none';
     setText('set-cur-bal','$'+fp(portVal()));setText('set-fees','$'+fp(account.fees));setText('set-trades',account.trades.length+'');
+    loadScheduleUI();loadNotifPrefsUI();updateScheduleStatus();
   }};
 
 window.applyTextSize=function(size){
@@ -2409,6 +2545,7 @@ function saveState(){
     localStorage.setItem('ct_account',JSON.stringify({cash:account.cash,start:account.start,positions:account.positions,trades:account.trades.slice(0,50),dayPnL:account.dayPnL,fees:account.fees}));
     localStorage.setItem('ct_bot',JSON.stringify({strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20),
       stratWeights:bot.stratWeights,consecutiveLosses:bot.consecutiveLosses,cooldowns:bot.cooldowns}));
+    localStorage.setItem('ct_pending_orders',JSON.stringify(pendingOrders));
     localStorage.setItem('ct_mkt',mkt);
     localStorage.setItem('ct_rsize',gv('r-size'));localStorage.setItem('ct_rsl',gv('r-sl'));
     localStorage.setItem('ct_rtp',gv('r-tp'));localStorage.setItem('ct_rmax',gv('r-max'));
@@ -2699,7 +2836,7 @@ function checkPriceAlerts(){
     if(fire){
       alert.triggered=true;changed=true;
       showToast('ALERT: '+alert.sym+' crossed '+alert.direction+' $'+fp(alert.price)+' (now $'+fp(pr)+')','warn');
-      if(_alertBeep){try{_alertBeep.currentTime=0;_alertBeep.play();}catch(e){}}
+      if(_alertBeep&&(typeof notifPrefs==='undefined'||notifPrefs.soundOnAlert)){try{_alertBeep.currentTime=0;_alertBeep.play();}catch(e){}}
     }
   });
   if(changed){savePriceAlerts();renderAlerts();}
@@ -3355,6 +3492,394 @@ function updateBotWidget(){
 // Update widget every 5 seconds
 setInterval(updateBotWidget,5000);
 
+// ===================== MULTI-ACCOUNT SUPPORT (Batch 6 Task 1) =====================
+var paperAccounts=[]; // [{id, name, cash, starting_balance, is_active}]
+
+window.createPaperAccount=async function(){
+  var name=prompt('Account name (e.g., Aggressive, Conservative, Test):');
+  if(!name||!name.trim())return;
+  var bal=prompt('Starting balance ($):','100000');
+  bal=parseFloat(bal);if(!bal||bal<=0){alert('Invalid balance');return;}
+  if(SB.user){
+    var{data,error}=await SB.client.from('paper_accounts').insert({user_id:SB.user.id,name:name.trim(),starting_balance:bal,cash:bal,is_active:false}).select().single();
+    if(error){showToast('Failed to create account: '+error.message,'warning');return;}
+    if(data)paperAccounts.push(data);
+    showToast('Account "'+name.trim()+'" created with $'+fp(bal),'info');
+    renderAccountSwitcher();
+  }else{
+    // Local-only mode
+    var id='local_'+Date.now();
+    paperAccounts.push({id:id,name:name.trim(),cash:bal,starting_balance:bal,is_active:false});
+    try{localStorage.setItem('ct_paper_accounts',JSON.stringify(paperAccounts))}catch(e){}
+    showToast('Account "'+name.trim()+'" created (local)','info');
+    renderAccountSwitcher();
+  }
+};
+
+window.switchPaperAccount=async function(accountId){
+  if(!accountId)return;
+  // Save current account state first
+  if(SB.user&&SB.accountId){
+    await SB.updateCash(account.cash);
+    await SB.savePositions(account.positions);
+    // Mark old account as inactive
+    await SB.client.from('paper_accounts').update({is_active:false}).eq('id',SB.accountId);
+  }
+  // Activate new account
+  var acct=paperAccounts.find(function(a){return a.id===accountId});
+  if(!acct)return;
+  if(SB.user){
+    await SB.client.from('paper_accounts').update({is_active:true}).eq('id',accountId);
+    SB.accountId=accountId;
+    // Load positions and trades for this account
+    var{data:pos}=await SB.client.from('positions').select('*').eq('account_id',accountId);
+    account.positions=(pos||[]).map(function(p){return{id:p.asset_id,sym:p.symbol,qty:parseFloat(p.quantity),avgPrice:parseFloat(p.avg_price)};});
+    var{data:trades}=await SB.client.from('trades').select('*').eq('account_id',accountId).order('created_at',{ascending:false}).limit(100);
+    account.trades=(trades||[]).map(function(t){return{type:t.side,id:t.asset_id,sym:t.symbol,qty:parseFloat(t.quantity),price:parseFloat(t.price),amount:parseFloat(t.amount),fees:parseFloat(t.fees),pnl:t.pnl!==null?parseFloat(t.pnl):undefined,time:new Date(t.created_at).toLocaleTimeString(),ts:new Date(t.created_at).getTime(),reason:t.reason||''};});
+    account.cash=parseFloat(acct.cash);
+    account.start=parseFloat(acct.starting_balance);
+  }else{
+    // Local mode
+    // Save current state
+    var curId=paperAccounts.find(function(a){return a.is_active});
+    if(curId){
+      curId.cash=account.cash;
+      curId._positions=account.positions;curId._trades=account.trades;curId.is_active=false;
+    }
+    acct.is_active=true;
+    account.cash=acct.cash||acct.starting_balance;
+    account.start=acct.starting_balance||100000;
+    account.positions=acct._positions||[];
+    account.trades=acct._trades||[];
+    try{localStorage.setItem('ct_paper_accounts',JSON.stringify(paperAccounts))}catch(e){}
+  }
+  account.fees=account.trades.reduce(function(s,t){return s+(t.fees||0)},0);
+  account.dayPnL=0;
+  bot.pnl=0;bot.trades=account.trades.length;
+  updateHdr();updatePos();updateTradeLog();updateNextMoves();renderAllocation();renderAssetPnL();renderAccountSwitcher();
+  showToast('Switched to "'+acct.name+'"','info');
+};
+
+async function loadPaperAccounts(){
+  if(SB.user){
+    var{data}=await SB.client.from('paper_accounts').select('id,name,cash,starting_balance,is_active').eq('user_id',SB.user.id).order('created_at');
+    if(data&&data.length)paperAccounts=data;
+  }else{
+    try{var s=localStorage.getItem('ct_paper_accounts');if(s)paperAccounts=JSON.parse(s);}catch(e){}
+  }
+  // If no accounts, create default entry
+  if(!paperAccounts.length){
+    paperAccounts=[{id:SB.accountId||'default',name:'Default',cash:account.cash,starting_balance:account.start,is_active:true}];
+  }
+  renderAccountSwitcher();
+}
+
+function renderAccountSwitcher(){
+  var sel=document.getElementById('acct-sel');if(!sel)return;
+  var activeId=SB.accountId||paperAccounts.find(function(a){return a.is_active})?paperAccounts.find(function(a){return a.is_active}).id:'';
+  sel.innerHTML=paperAccounts.map(function(a){
+    return'<option value="'+a.id+'"'+(a.id===activeId?' selected':'')+'>'+a.name+'</option>';
+  }).join('');
+  // Mini summaries
+  var sEl=document.getElementById('acct-summaries');if(!sEl)return;
+  if(paperAccounts.length<=1){sEl.innerHTML='';return;}
+  sEl.innerHTML=paperAccounts.map(function(a){
+    var isActive=a.id===activeId;
+    var pv=isActive?portVal():parseFloat(a.cash||a.starting_balance);
+    var pnl=pv-parseFloat(a.starting_balance);
+    var c=pnl>=0?'grn':'red';
+    return'<div class="acct-card'+(isActive?' active':'')+'" onclick="switchPaperAccount(\''+a.id+'\')">'+
+      '<div class="flex justify-between"><span class="font-bold text-t1">'+a.name+'</span><span class="text-'+c+' font-bold" style="font-size:9px">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+'</span></div>'+
+      '<div class="flex justify-between text-t2" style="font-size:9px"><span>$'+fp(pv)+'</span>'+(isActive?'<span class="text-grn">Active</span>':'')+'</div></div>';
+  }).join('');
+}
+
+// ===================== ADVANCED ORDER TYPES (Batch 6 Task 2) =====================
+var pendingOrders=[];
+try{var po=localStorage.getItem('ct_pending_orders');if(po)pendingOrders=JSON.parse(po);}catch(e){}
+
+function savePendingOrders(){
+  try{localStorage.setItem('ct_pending_orders',JSON.stringify(pendingOrders))}catch(e){}
+}
+
+window.placeLimitOrder=function(){
+  var assetId=gv('order-asset');if(!assetId)return;
+  var type=gv('order-type');
+  var price=parseFloat(gv('order-price'));if(!price||price<=0){alert('Enter a valid price');return;}
+  var amount=parseFloat(gv('order-amount'));if(!amount||amount<=0){alert('Enter a valid amount');return;}
+  var a=findA(assetId);if(!a)return;
+  var curPr=prOf(assetId);
+  // Validate order makes sense
+  if(type==='limit_buy'&&curPr&&price>=curPr){showToast('Limit buy price should be below current price ($'+fp(curPr)+')','warning');return;}
+  if(type==='limit_sell'&&curPr&&price<=curPr){showToast('Limit sell price should be above current price ($'+fp(curPr)+')','warning');return;}
+  if(type==='stop_buy'&&curPr&&price<=curPr){showToast('Stop buy price should be above current price ($'+fp(curPr)+')','warning');return;}
+  if(type==='stop_sell'&&curPr&&price>=curPr){showToast('Stop sell price should be below current price ($'+fp(curPr)+')','warning');return;}
+  var order={id:Date.now(),type:type,assetId:assetId,sym:a.sym,price:price,amount:amount,qty:amount/price,created:new Date().toLocaleTimeString(),status:'pending'};
+  pendingOrders.push(order);
+  savePendingOrders();
+  renderPendingOrders();
+  showToast(type.replace('_',' ').toUpperCase()+': '+a.sym+' @ $'+fp(price)+' ($'+fp(amount)+')','info');
+  document.getElementById('order-price').value='';
+};
+
+window.cancelOrder=function(id){
+  var order=pendingOrders.find(function(o){return o.id===id});
+  if(order)order.status='cancelled';
+  pendingOrders=pendingOrders.filter(function(o){return o.status==='pending'});
+  savePendingOrders();renderPendingOrders();
+  showToast('Order cancelled','info');
+};
+
+function checkPendingOrders(){
+  var filled=false;
+  pendingOrders.forEach(function(order){
+    if(order.status!=='pending')return;
+    var pr=prOf(order.assetId);if(!pr)return;
+    var execute=false;
+    if(order.type==='limit_buy'&&pr<=order.price)execute=true;
+    if(order.type==='limit_sell'&&pr>=order.price)execute=true;
+    if(order.type==='stop_buy'&&pr>=order.price)execute=true;
+    if(order.type==='stop_sell'&&pr<=order.price)execute=true;
+    if(execute){
+      order.status='filled';filled=true;
+      if(order.type==='limit_buy'||order.type==='stop_buy'){
+        var t=buyA(order.assetId,order.amount,'Limit order filled @ $'+fp(order.price)+' (type: '+order.type+')');
+        if(t)blog('ORDER FILLED: '+order.type.replace('_',' ').toUpperCase()+' '+order.sym+' @ $'+fp(order.price));
+      }else{
+        var pos=account.positions.find(function(p){return p.id===order.assetId});
+        if(pos){
+          var qty=order.amount/pr;if(qty>pos.qty)qty=pos.qty;
+          var t=window.sellA(order.assetId,qty,'Limit order filled @ $'+fp(order.price)+' (type: '+order.type+')');
+          if(t)blog('ORDER FILLED: '+order.type.replace('_',' ').toUpperCase()+' '+order.sym+' @ $'+fp(order.price));
+        }
+      }
+    }
+  });
+  if(filled){
+    pendingOrders=pendingOrders.filter(function(o){return o.status==='pending'});
+    savePendingOrders();renderPendingOrders();
+  }
+}
+
+function renderPendingOrders(){
+  var el=document.getElementById('orders-list');if(!el)return;
+  var ce=document.getElementById('orders-count');
+  var active=pendingOrders.filter(function(o){return o.status==='pending'}).length;
+  if(ce)ce.textContent=active+' pending';
+  if(!pendingOrders.length||!active){el.innerHTML='<div class="text-t2 text-xs text-center py-1">No pending orders</div>';return;}
+  var sorted=pendingOrders.filter(function(o){return o.status==='pending'}).sort(function(a,b){return a.price-b.price});
+  el.innerHTML=sorted.map(function(o){
+    var pr=prOf(o.assetId);var distPct=pr?((o.price-pr)/pr*100).toFixed(1):'--';
+    var isBuy=o.type.indexOf('buy')>-1;
+    var isStop=o.type.indexOf('stop')>-1;
+    return'<div class="order-row'+(isStop?' stop':'')+'">'+
+      '<div><span class="font-bold '+(isBuy?'text-blu':'text-red')+'">'+o.type.replace('_',' ').toUpperCase()+'</span> '+
+      '<span class="font-bold text-t1">'+o.sym+'</span></div>'+
+      '<div class="flex items-center gap-2">'+
+        '<span class="text-t2" style="font-size:9px">'+distPct+'%</span>'+
+        '<span class="font-bold">$'+fp(o.price)+'</span>'+
+        '<span class="text-t2">$'+fp(o.amount)+'</span>'+
+        '<button class="order-cancel" onclick="cancelOrder('+o.id+')" title="Cancel">&times;</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+function populateOrderAssets(){
+  var sel=document.getElementById('order-asset');if(!sel)return;
+  var wla=getWL();
+  sel.innerHTML=wla.map(function(a){return'<option value="'+a.id+'">'+a.sym+'</option>'}).join('');
+}
+
+// ===================== RISK ANALYTICS DASHBOARD (Batch 6 Task 3) =====================
+function renderRiskAnalytics(){
+  var el=document.getElementById('risk-analytics');if(!el)return;
+  if(!account.positions.length&&!account.trades.length){
+    el.innerHTML='<div class="text-t2 text-xs text-center py-2">Start trading to see risk metrics</div>';return;
+  }
+  var pv=portVal();var h='';
+
+  // VaR (Value at Risk) 95%
+  var m=RiskEngine.calcMetrics(account.trades,account.start);
+  var var95=m&&m.var95?Math.abs(m.var95):0;
+  h+='<div class="risk-card mb-2">'+
+    '<div class="text-t2 font-bold uppercase" style="font-size:9px;letter-spacing:.5px">Value at Risk (95%)</div>'+
+    '<div class="font-bold text-ylw" style="font-size:16px">$'+fp(var95)+'</div>'+
+    '<div class="text-t2" style="font-size:9px">95% chance your daily loss won\'t exceed $'+fp(var95)+'</div>'+
+  '</div>';
+
+  // Position Concentration
+  if(account.positions.length){
+    h+='<div class="risk-card mb-2">';
+    h+='<div class="text-t2 font-bold uppercase mb-1" style="font-size:9px;letter-spacing:.5px">Concentration</div>';
+    account.positions.forEach(function(p){
+      var val=p.qty*prOf(p.id);var pct=pv>0?(val/pv*100):0;
+      var warn=pct>40;
+      h+='<div class="flex justify-between items-center mb-1" style="font-size:10px">'+
+        '<span class="font-bold text-t1">'+p.sym+'</span>'+
+        '<span class="font-bold '+(warn?'text-red':'text-t2')+'">'+pct.toFixed(1)+'%</span></div>'+
+        '<div class="risk-bar"><div class="risk-bar-fill '+(warn?'bg-red':pct>25?'bg-ylw':'bg-grn')+'" style="width:'+Math.min(100,pct)+'%"></div></div>';
+      if(warn)h+='<div class="text-red" style="font-size:8px;margin-top:1px">Warning: exceeds 40% of portfolio</div>';
+    });
+    h+='</div>';
+  }
+
+  // Exposure Summary
+  var longExp=account.positions.reduce(function(s,p){return s+p.qty*prOf(p.id)},0);
+  var cashPct=pv>0?(account.cash/pv*100):100;
+  var maxP=parseInt(gv('r-max')||5);
+  var largest=account.positions.length?account.positions.reduce(function(mx,p){var v=p.qty*prOf(p.id);return v>mx.v?{sym:p.sym,v:v}:mx},{sym:'--',v:0}):{sym:'--',v:0};
+  h+='<div class="risk-card mb-2">';
+  h+='<div class="text-t2 font-bold uppercase mb-1" style="font-size:9px;letter-spacing:.5px">Exposure Summary</div>';
+  h+='<div class="flex justify-between" style="font-size:10px"><span class="text-t2">Long Exposure</span><span class="font-bold text-t1">$'+fp(longExp)+' ('+(pv>0?((longExp/pv*100).toFixed(1)):0)+'%)</span></div>';
+  h+='<div class="flex justify-between" style="font-size:10px"><span class="text-t2">Cash</span><span class="font-bold text-t1">$'+fp(account.cash)+' ('+cashPct.toFixed(1)+'%)</span></div>';
+  h+='<div class="flex justify-between" style="font-size:10px"><span class="text-t2">Largest Position</span><span class="font-bold text-t1">'+largest.sym+' $'+fp(largest.v)+'</span></div>';
+  h+='<div class="flex justify-between" style="font-size:10px"><span class="text-t2">Positions</span><span class="font-bold text-t1">'+account.positions.length+' / '+maxP+'</span></div>';
+  h+='</div>';
+
+  // Correlation Heat Map (held assets only)
+  if(account.positions.length>=2){
+    h+='<div class="risk-card mb-2">';
+    h+='<div class="text-t2 font-bold uppercase mb-1" style="font-size:9px;letter-spacing:.5px">Portfolio Correlation</div>';
+    var syms=account.positions.map(function(p){return p.sym});
+    var co=mkt==='crypto'?CORR_C:CORR_S;
+    var size=syms.length+1;
+    h+='<div class="corr-matrix" style="grid-template-columns:repeat('+size+',1fr)">';
+    // Header row
+    h+='<div class="corr-cell"></div>';
+    syms.forEach(function(s){h+='<div class="corr-cell text-t2" style="font-weight:700">'+s+'</div>';});
+    // Data rows
+    syms.forEach(function(s1,i){
+      h+='<div class="corr-cell text-t2" style="font-weight:700">'+s1+'</div>';
+      syms.forEach(function(s2,j){
+        if(i===j){h+='<div class="corr-cell" style="background:var(--blu);color:#fff">1.00</div>';return;}
+        var key1=s1+'-'+s2,key2=s2+'-'+s1;
+        var corr=co[key1]||co[key2]||0;
+        var bg=corr>=0.8?'rgba(248,81,73,.3)':corr>=0.6?'rgba(210,153,34,.2)':'rgba(63,185,80,.15)';
+        var tc=corr>=0.8?'text-red':corr>=0.6?'text-ylw':'text-grn';
+        h+='<div class="corr-cell '+tc+'" style="background:'+bg+'">'+corr.toFixed(2)+'</div>';
+      });
+    });
+    h+='</div>';
+    // High correlation warning
+    var warned=false;
+    for(var i=0;i<syms.length&&!warned;i++){
+      for(var j=i+1;j<syms.length;j++){
+        var key1=syms[i]+'-'+syms[j],key2=syms[j]+'-'+syms[i];
+        var corr=co[key1]||co[key2]||0;
+        if(corr>=0.8){h+='<div class="text-red mt-1" style="font-size:8px">High correlation ('+corr.toFixed(2)+') between '+syms[i]+' and '+syms[j]+' — concentrated risk</div>';warned=true;break;}
+      }
+    }
+    h+='</div>';
+  }
+
+  el.innerHTML=h;
+}
+
+// ===================== SETTINGS ENHANCEMENTS (Batch 6 Task 4) =====================
+
+// Task 4a: Export trade history as CSV
+window.exportTradesCSV=function(){
+  if(!account.trades.length){alert('No trades to export');return;}
+  var headers=['Date','Type','Asset','Quantity','Price','Amount','Fees','P&L','Strategy','Reason'];
+  var rows=[headers.join(',')];
+  account.trades.forEach(function(t){
+    var strat='';
+    if(t.reason){var sm=t.reason.match(/strategy:\s*(\w+)/);if(sm)strat=sm[1];else if(t.reason.indexOf('DCA')===0)strat='dca';else if(t.reason.indexOf('Manual')===0)strat='manual';}
+    var row=[
+      t.time||'',t.type||'',t.sym||'',
+      t.qty?t.qty.toFixed(6):'',t.price?t.price.toFixed(2):'',
+      t.amount?t.amount.toFixed(2):'',t.fees?t.fees.toFixed(4):'',
+      t.pnl!==undefined?t.pnl.toFixed(2):'',
+      strat,'"'+(t.reason||'').replace(/"/g,'""')+'"'
+    ];
+    rows.push(row.join(','));
+  });
+  var csv=rows.join('\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download='culextrade-trades-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  showToast('Exported '+account.trades.length+' trades as CSV','info');
+};
+
+// Task 4b: Reset paper account
+window.resetPaperAccount=function(){
+  var balance=account.start||100000;
+  if(!confirm('Reset paper account to $'+fp(balance)+'?\n\nAll positions and trades will be permanently cleared.\n\nThis cannot be undone.'))return;
+  account.cash=balance;account.positions=[];account.trades=[];account.dayPnL=0;account.fees=0;
+  bot.pnl=0;bot.trades=0;equityCurve=[];
+  if(SB.user&&SB.accountId){
+    SB.updateCash(balance);
+    SB.savePositions([]);
+    // Delete trades for this account
+    SB.client.from('trades').delete().eq('account_id',SB.accountId);
+  }
+  updateHdr();updatePos();updateTradeLog();updateUI();renderAllocation();renderAssetPnL();
+  showToast('Account reset to $'+fp(balance),'info');
+};
+
+// Task 4c: Bot trading schedule
+var botSchedule={enabled:false,startTime:'09:00',endTime:'17:00',days:[1,2,3,4,5]};
+try{var bs=localStorage.getItem('ct_bot_schedule');if(bs)botSchedule=JSON.parse(bs);}catch(e){}
+
+window.saveSchedule=function(){
+  botSchedule.enabled=document.getElementById('sched-enabled').checked;
+  botSchedule.startTime=document.getElementById('sched-start').value;
+  botSchedule.endTime=document.getElementById('sched-end').value;
+  botSchedule.days=[];
+  document.querySelectorAll('.sched-day').forEach(function(cb){if(cb.checked)botSchedule.days.push(parseInt(cb.value));});
+  try{localStorage.setItem('ct_bot_schedule',JSON.stringify(botSchedule))}catch(e){}
+  updateScheduleStatus();
+};
+
+function loadScheduleUI(){
+  var el=document.getElementById('sched-enabled');if(el)el.checked=botSchedule.enabled;
+  var st=document.getElementById('sched-start');if(st)st.value=botSchedule.startTime||'09:00';
+  var en=document.getElementById('sched-end');if(en)en.value=botSchedule.endTime||'17:00';
+  document.querySelectorAll('.sched-day').forEach(function(cb){
+    cb.checked=botSchedule.days.indexOf(parseInt(cb.value))>-1;
+  });
+  updateScheduleStatus();
+}
+
+function updateScheduleStatus(){
+  var el=document.getElementById('sched-status');if(!el)return;
+  if(!botSchedule.enabled){el.textContent='Bot will trade anytime (schedule disabled)';el.style.color='var(--t2)';return;}
+  var dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var activeDays=botSchedule.days.sort().map(function(d){return dayNames[d]}).join(', ');
+  var inWindow=isWithinSchedule();
+  el.innerHTML=(inWindow?'<span class="text-grn font-bold">ACTIVE</span>':'<span class="text-red font-bold">OUTSIDE HOURS</span>')+
+    ' — '+botSchedule.startTime+' to '+botSchedule.endTime+' EST on '+activeDays;
+}
+
+function isWithinSchedule(){
+  if(!botSchedule.enabled)return true;
+  // Convert current time to EST
+  var now=new Date();
+  var est=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  var day=est.getDay();
+  if(botSchedule.days.indexOf(day)===-1)return false;
+  var hhmm=('0'+est.getHours()).slice(-2)+':'+('0'+est.getMinutes()).slice(-2);
+  return hhmm>=botSchedule.startTime&&hhmm<=botSchedule.endTime;
+}
+
+// Task 4d: Notification preferences
+var notifPrefs={toastOnTrade:true,soundOnAlert:true,soundOnTrade:false};
+try{var np=localStorage.getItem('ct_notif_prefs');if(np)notifPrefs=JSON.parse(np);}catch(e){}
+
+window.saveNotifPrefs=function(){
+  notifPrefs.toastOnTrade=document.getElementById('notif-toast-trade').checked;
+  notifPrefs.soundOnAlert=document.getElementById('notif-sound-alert').checked;
+  notifPrefs.soundOnTrade=document.getElementById('notif-sound-trade').checked;
+  try{localStorage.setItem('ct_notif_prefs',JSON.stringify(notifPrefs))}catch(e){}
+};
+
+function loadNotifPrefsUI(){
+  var t=document.getElementById('notif-toast-trade');if(t)t.checked=notifPrefs.toastOnTrade;
+  var sa=document.getElementById('notif-sound-alert');if(sa)sa.checked=notifPrefs.soundOnAlert;
+  var st=document.getElementById('notif-sound-trade');if(st)st.checked=notifPrefs.soundOnTrade;
+}
+
 // ===================== INIT =====================
 ConnGuard.init();
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
@@ -3365,6 +3890,11 @@ initTicker();
 loadAll();
 updateDcaTargets();
 loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
+// Batch 6: Init pending orders, order assets, risk analytics, schedule, notif prefs
+renderPendingOrders();populateOrderAssets();loadScheduleUI();loadNotifPrefsUI();
+setTimeout(function(){loadPaperAccounts();renderRiskAnalytics();},1500);
+// Check pending orders on REST price refresh too
+setInterval(function(){checkPendingOrders();renderRiskAnalytics();},15000);
 // Restore watchlist sort button state
 (function(){var btns=document.querySelectorAll('.wl-sort-btn');btns.forEach(function(b){b.classList.remove('on');if(b.textContent.toLowerCase()===_wlSort||(_wlSort==='volume'&&b.textContent==='Vol'))b.classList.add('on')});})();
 // Batch 3: Load S/R levels and historical context from Supabase (async, non-blocking)

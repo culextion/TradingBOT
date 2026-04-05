@@ -71,6 +71,8 @@ var SB = {
     await this.loadTrades();
     // Load strategy performance to initialize adaptive weights (Batch 5 Task 1c)
     if (typeof loadStrategyPerformance === 'function') await loadStrategyPerformance();
+    // Batch 6: Load all paper accounts for switcher
+    if (typeof loadPaperAccounts === 'function') await loadPaperAccounts();
     // Update UI
     if (typeof updateAuthUI === 'function') updateAuthUI(true);
   },
@@ -82,18 +84,31 @@ var SB = {
 
   // ---- PAPER ACCOUNT ----
   ensurePaperAccount: async function() {
+    // Try active account first
     var { data } = await this.client.from('paper_accounts')
-      .select('id,cash,starting_balance')
+      .select('id,cash,starting_balance,name')
       .eq('user_id', this.user.id)
       .eq('is_active', true)
       .single();
+    if (!data) {
+      // Fallback: any account
+      var { data: anyAcc } = await this.client.from('paper_accounts')
+        .select('id,cash,starting_balance,name')
+        .eq('user_id', this.user.id)
+        .order('created_at')
+        .limit(1)
+        .single();
+      data = anyAcc;
+    }
     if (data) {
       this.accountId = data.id;
       account.cash = parseFloat(data.cash);
       account.start = parseFloat(data.starting_balance);
+      // Mark as active
+      await this.client.from('paper_accounts').update({ is_active: true }).eq('id', data.id);
     } else {
       var { data: newAcc } = await this.client.from('paper_accounts')
-        .insert({ user_id: this.user.id, name: 'Default', starting_balance: 100000, cash: 100000 })
+        .insert({ user_id: this.user.id, name: 'Default', starting_balance: 100000, cash: 100000, is_active: true })
         .select().single();
       if (newAcc) this.accountId = newAcc.id;
     }
@@ -187,9 +202,11 @@ var SB = {
   },
 
   loadTrades: async function() {
-    var { data } = await this.client.from('trades')
+    var query = this.client.from('trades')
       .select('*').eq('user_id', this.user.id)
       .order('created_at', { ascending: false }).limit(100);
+    if (this.accountId) query = query.eq('account_id', this.accountId);
+    var { data } = await query;
     if (data && data.length) {
       account.trades = data.map(function(t) {
         return {
@@ -217,8 +234,10 @@ var SB = {
   },
 
   loadPositions: async function() {
-    var { data } = await this.client.from('positions')
+    var query = this.client.from('positions')
       .select('*').eq('user_id', this.user.id);
+    if (this.accountId) query = query.eq('account_id', this.accountId);
+    var { data } = await query;
     if (data && data.length) {
       account.positions = data.map(function(p) {
         return { id: p.asset_id, sym: p.symbol, qty: parseFloat(p.quantity), avgPrice: parseFloat(p.avg_price) };
