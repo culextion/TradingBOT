@@ -1338,11 +1338,14 @@ function loadAll(){
     // REST price refresh every 15 seconds — keeps data fresh even if WebSocket drops
     if(window._fhInterval)clearInterval(window._fhInterval);
     window._fhInterval=setInterval(function(){
+      // Fetch current market watchlist prices
       fhAllQuotes(getWL()).then(function(){
         ConnGuard.onPriceUpdate();
         updateTicker();updateWL();updatePulse();updateHdr();updateCorr();
         checkPriceAlerts();
       }).catch(function(){ConnGuard.onAPIFailure()});
+      // Also refresh prices for cross-market held positions (e.g., stocks while in crypto mode)
+      fetchHeldPositionPrices();
     },15000);
   }).catch(function(e){
     console.error(e);setStatus('err','API error — retrying');
@@ -1850,9 +1853,11 @@ function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p
 // Fetch live prices for ALL held positions (cross-market)
 function fetchHeldPositionPrices(){
   if(!account.positions.length)return;
-  // Find crypto positions without live prices
+  var currentWLIds={};getWL().forEach(function(a){currentWLIds[a.id]=true;});
+
+  // Find held crypto positions NOT in current watchlist (need separate fetch)
   var cryptoIds=account.positions.filter(function(p){
-    return !prices[p.id]||!prices[p.id].usd;
+    return !currentWLIds[p.id]; // skip assets already fetched by main refresh
   }).filter(function(p){
     return CRYPTO.find(function(c){return c.id===p.id})||['bitcoin','ethereum','solana','binancecoin','ripple','cardano','dogecoin','polkadot','chainlink','avalanche-2','polygon'].indexOf(p.id)>-1;
   }).map(function(p){return p.id});
@@ -1864,9 +1869,9 @@ function fetchHeldPositionPrices(){
         updateUI();updateHdr();
       }).catch(function(){});
   }
-  // Stock positions — try Finnhub if available
+  // Find held stock positions NOT in current watchlist
   var stockPos=account.positions.filter(function(p){
-    return !prices[p.id]||!prices[p.id].usd;
+    return !currentWLIds[p.id];
   }).filter(function(p){
     return STOCKS.find(function(s){return s.id===p.id})||(typeof ALL_STOCKS!=='undefined'&&ALL_STOCKS.find(function(s){return s.id===p.id}));
   });
