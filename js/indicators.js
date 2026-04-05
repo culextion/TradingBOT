@@ -201,12 +201,51 @@ export function renderIndicatorPanel(container, ohlcvData, symbol) {
         <span class="indicator-badge active">MACD</span>
         <span class="indicator-badge active">SMA</span>
         <span class="indicator-badge active">BB</span>
+        <span class="indicator-badge active">ADX</span>
         <span class="indicator-badge">EMA</span>
         <span class="indicator-badge">VWAP</span>
         <span class="indicator-badge">OBV</span>
       </div>
     </div>
   `;
+}
+
+/**
+ * Calculate ADX (Average Directional Index) — Batch 8.
+ */
+export function calcADX(data, period = 14) {
+  if (!data || data.length < period * 3) return { adx: 0, pdi: 0, mdi: 0 };
+  const tr = [], pdm = [], mdm = [];
+  for (let i = 1; i < data.length; i++) {
+    const hi = data[i].high || data[i].close;
+    const lo = data[i].low || data[i].close;
+    const phi = data[i - 1].high || data[i - 1].close;
+    const plo = data[i - 1].low || data[i - 1].close;
+    const pc = data[i - 1].close;
+    tr.push(Math.max(hi - lo, Math.abs(hi - pc), Math.abs(lo - pc)));
+    const up = hi - phi, dn = plo - lo;
+    pdm.push(up > dn && up > 0 ? up : 0);
+    mdm.push(dn > up && dn > 0 ? dn : 0);
+  }
+  if (tr.length < period) return { adx: 0, pdi: 0, mdi: 0 };
+  let atr = 0, apdm = 0, amdm = 0;
+  for (let i = 0; i < period; i++) { atr += tr[i]; apdm += pdm[i]; amdm += mdm[i]; }
+  const dx = [];
+  for (let i = period; i < tr.length; i++) {
+    atr = atr - atr / period + tr[i];
+    apdm = apdm - apdm / period + pdm[i];
+    amdm = amdm - amdm / period + mdm[i];
+    const pdi = atr > 0 ? (apdm / atr) * 100 : 0;
+    const mdi = atr > 0 ? (amdm / atr) * 100 : 0;
+    const sum = pdi + mdi;
+    dx.push(sum > 0 ? Math.abs(pdi - mdi) / sum * 100 : 0);
+  }
+  if (dx.length < period) return { adx: 0, pdi: atr > 0 ? (apdm / atr) * 100 : 0, mdi: atr > 0 ? (amdm / atr) * 100 : 0 };
+  let adx = 0;
+  for (let i = 0; i < period; i++) adx += dx[i];
+  adx /= period;
+  for (let i = period; i < dx.length; i++) adx = (adx * (period - 1) + dx[i]) / period;
+  return { adx, pdi: atr > 0 ? (apdm / atr) * 100 : 0, mdi: atr > 0 ? (amdm / atr) * 100 : 0 };
 }
 
 // --- Internal helpers ---
