@@ -69,6 +69,8 @@ var SB = {
     await this.loadWatchlist();
     await this.loadPositions();
     await this.loadTrades();
+    // Load strategy performance to initialize adaptive weights (Batch 5 Task 1c)
+    if (typeof loadStrategyPerformance === 'function') await loadStrategyPerformance();
     // Update UI
     if (typeof updateAuthUI === 'function') updateAuthUI(true);
   },

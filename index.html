@@ -91,6 +91,9 @@ select.inp{appearance:auto}
   #page-dashboard>.flex-1{grid-template-columns:1fr !important;grid-template-rows:auto !important}
   #page-dashboard .grid-cols-3{grid-template-columns:1fr !important}
   #page-dashboard .col-span-2{grid-column:auto !important}
+  #mkt-overview-row{flex-wrap:wrap}
+  #mkt-overview-row>div{flex:1 1 45%;min-width:120px}
+  #trending-row{flex-wrap:wrap}
 }
 @media(max-width:768px){
   header{padding:4px 8px !important;flex-wrap:wrap;gap:4px}
@@ -191,9 +194,35 @@ select.inp{appearance:auto}
       <div class="text-t2 uppercase font-bold mb-1" style="font-size:9px;letter-spacing:1px">Market Pulse</div>
       <div id="pulse" class="text-xs space-y-0.5"></div>
     </div>
+    <!-- News Feed (Batch 5 Task 2a) -->
+    <div class="p-2 border-t border-bd flex-1" style="min-height:80px;overflow-y:auto">
+      <div class="text-t2 uppercase font-bold mb-1" style="font-size:9px;letter-spacing:1px">News Feed</div>
+      <div id="news-feed" class="text-xs space-y-1"><div class="text-t2 text-center" style="font-size:9px">Loading news...</div></div>
+    </div>
   </aside>
   <!-- Charts -->
-  <div class="flex-1 p-2 grid gap-1.5 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
+  <div class="flex-1 p-2 overflow-hidden" style="display:flex;flex-direction:column;gap:6px;min-height:0">
+    <!-- Market Overview Cards (Batch 5 Task 4a) -->
+    <div class="flex gap-2 flex-shrink-0" id="mkt-overview-row" style="min-height:42px">
+      <div class="bg-s1 border border-bd rounded-lg px-3 py-1 flex-1 flex items-center justify-between" style="min-width:0">
+        <span class="text-t2" style="font-size:9px">Market Cap</span>
+        <span id="mkt-cap" class="font-bold text-t1" style="font-size:12px">--</span>
+      </div>
+      <div class="bg-s1 border border-bd rounded-lg px-3 py-1 flex-1 flex items-center justify-between" style="min-width:0">
+        <span class="text-t2" style="font-size:9px">BTC Dom.</span>
+        <span id="mkt-btcdom" class="font-bold text-blu" style="font-size:12px">--</span>
+      </div>
+      <div class="bg-s1 border border-bd rounded-lg px-3 py-1 flex-1 flex items-center justify-between" style="min-width:0">
+        <span class="text-t2" style="font-size:9px">Fear & Greed</span>
+        <span id="mkt-fng" class="font-bold text-ylw" style="font-size:12px">--</span>
+      </div>
+      <div class="bg-s1 border border-bd rounded-lg px-3 py-1 flex-1 flex items-center justify-between" style="min-width:0">
+        <span class="text-t2" style="font-size:9px">24h Volume</span>
+        <span id="mkt-vol24" class="font-bold text-t1" style="font-size:12px">--</span>
+      </div>
+    </div>
+    <!-- Chart grid -->
+    <div class="grid gap-1.5 flex-1 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
     <!-- Row 1: Main chart + sidebar (insights + signals stacked) -->
     <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main"></div></div>
     <div class="flex flex-col gap-1.5 min-h-0 overflow-hidden">
@@ -205,6 +234,12 @@ select.inp{appearance:auto}
       <div class="panel"><div class="ph"><select id="sel-c2" class="title" onchange="switchTile('c2',this.value)" style="background:none;border:none;color:var(--t2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;padding:0"></select><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c2',0.04,this)">1H</button><button class="tf" onclick="tfClick('c2',1,this)">1D</button><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
       <div class="panel"><div class="ph"><select id="sel-c3" class="title" onchange="switchTile('c3',this.value)" style="background:none;border:none;color:var(--t2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;padding:0"></select><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c3',0.04,this)">1H</button><button class="tf" onclick="tfClick('c3',1,this)">1D</button><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
       <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
+    </div>
+    </div><!-- /chart grid -->
+    <!-- Trending Assets (Batch 5 Task 4b) -->
+    <div class="flex gap-2 flex-shrink-0" id="trending-row" style="min-height:36px;display:none">
+      <div class="text-t2 flex items-center" style="font-size:9px;font-weight:700;letter-spacing:.5px;padding-right:6px;text-transform:uppercase">Trending</div>
+      <div id="trending-assets" class="flex gap-2 flex-1 overflow-x-auto" style="min-width:0"></div>
     </div>
   </div>
 </div>
@@ -482,10 +517,29 @@ select.inp{appearance:auto}
     <div class="ph"><span>Historical Context</span><span id="hist-status" class="text-t2" style="font-size:9px">Loading from Supabase...</span></div>
     <div class="pb p-4" id="c-hist-context"><div class="text-t2 text-xs text-center py-4">Loading historical data from Supabase...</div></div>
   </div>
+  <!-- News for Selected Asset (Batch 5 Task 2b) -->
+  <div class="panel col-span-2">
+    <div class="ph"><span>Market News</span><span id="news-asset-label" class="text-t2" style="font-size:9px">All</span></div>
+    <div class="pb p-3 overflow-y-auto" id="c-analysis-news" style="max-height:280px"><div class="text-t2 text-xs text-center py-4">Loading news...</div></div>
+  </div>
   <!-- Performance Analytics (Task 2) -->
   <div class="panel col-span-2">
     <div class="ph"><span>Performance Analytics</span></div>
     <div class="pb p-4" id="c-perf-analytics"><div class="text-t2 text-xs text-center py-4">Start trading to see performance analytics</div></div>
+  </div>
+  <!-- Trade History Chart / Trade Replay (Batch 5 Task 3) -->
+  <div class="panel col-span-2">
+    <div class="ph">
+      <span>Trade History Chart</span>
+      <div class="flex items-center gap-2">
+        <select id="replay-asset" class="inp" onchange="renderTradeReplay()" style="font-size:10px;width:120px;padding:2px 6px"></select>
+        <span id="replay-summary" class="text-t2" style="font-size:9px"></span>
+      </div>
+    </div>
+    <div class="pb" style="position:relative">
+      <div id="c-trade-replay" style="height:280px"><div class="flex items-center justify-center h-full text-t2 text-xs">Select an asset to see trade history on chart</div></div>
+      <div id="trade-replay-stats" class="p-3" style="border-top:1px solid var(--bd)"></div>
+    </div>
   </div>
   <!-- Cumulative P&L Chart -->
   <div class="panel col-span-2">
@@ -1081,7 +1135,7 @@ function loadAllOHLC(assets,idx){
 }
 
 // ===================== UI UPDATES =====================
-function updateUI(){updateTicker();updateWL();updatePulse();updateCorr();updateSig();updateHdr();updatePos();updateAnalysis();}
+function updateUI(){updateTicker();updateWL();updatePulse();updateCorr();updateSig();updateHdr();updatePos();updateAnalysis();renderTrending();}
 
 // JS-driven ticker — two cloned elements, measure precisely, wrap seamlessly
 var tickerPos=0,tickerHalf=0,tickerPaused=false,tickerBuilt=false;
@@ -2148,10 +2202,10 @@ function setStatus(s,t){var d=document.getElementById('st-dot'),x=document.getEl
 window.showPage=function(p,btn){
   ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
-  if(p==='dashboard')setTimeout(resizeCharts,200);
+  if(p==='dashboard'){setTimeout(resizeCharts,200);renderTrending();renderNewsFeed();}
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();populateRebalAssets();renderRebalance();
     if(equityCurve.length){setTimeout(function(){renderEquityCurve();renderDrawdownChart();renderBenchmarkChart()},200);}}
-  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();}
+  if(p==='analysis'){updateAnalysis();renderPerformanceAnalytics();renderHistoricalContext();renderNewsFeed();populateReplayAssets();renderTradeReplay();}
   if(p==='settings'){
     var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
@@ -2206,9 +2260,112 @@ window.updateAuthUI=function(loggedIn){
 
 // Override trade functions to sync with Supabase
 var _origBuyA=buyA;
-buyA=function(id,amt,reason){var t=_origBuyA(id,amt,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+buyA=function(id,amt,reason){var t=_origBuyA(id,amt,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);
+  // Task 1a: Record strategy performance entry on BUY
+  recordStrategyEntry(t);
+}return t;};
 var _origSellA=window.sellA;
-window.sellA=function(id,qty,reason){var t=_origSellA(id,qty,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);}return t;};
+window.sellA=function(id,qty,reason){var t=_origSellA(id,qty,reason);if(t&&SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);
+  // Task 1b: Update strategy performance on SELL
+  recordStrategyExit(t);
+}return t;};
+
+// ===================== STRATEGY PERFORMANCE TRACKER (Batch 5 Task 1) =====================
+async function getAuthToken(){
+  var session=SB.client&&SB.client.auth.getSession?(await SB.client.auth.getSession()).data.session:null;
+  return session?session.access_token:SUPABASE_ANON;
+}
+
+async function recordStrategyEntry(trade){
+  if(!SB.user||!trade)return;
+  // Parse strategy from reason
+  var strat='hybrid';
+  if(trade.reason){
+    var sm=trade.reason.match(/strategy:\s*(\w+)/);if(sm)strat=sm[1];
+    else{var sm2=trade.reason.match(/\((\w+)\)$/);if(sm2)strat=sm2[1];}
+    if(trade.reason.indexOf('DCA')===0)strat='dca';
+    if(trade.reason.indexOf('Rebalance')===0)strat='rebalance';
+    if(trade.reason.indexOf('Manual')===0)strat='manual';
+  }
+  var regime=detectMarketRegime();
+  var btcCh=chOf('bitcoin')||0;
+  var conf=0;
+  // Try to find the signal confidence that triggered this
+  var moves=analyzeMarket();
+  var matchSig=moves.find(function(m){return m.id===trade.id&&m.dir==='buy'});
+  if(matchSig)conf=matchSig.conf;
+  var row={
+    user_id:SB.user.id,strategy:strat,asset_id:trade.id,symbol:trade.sym,
+    signal_type:'BUY',signal_confidence:Math.round(conf),entry_price:trade.price,
+    market_regime:regime.bearish?'bearish':'bullish',btc_change_at_entry:Math.round(btcCh*100)/100
+  };
+  try{
+    var token=await getAuthToken();
+    fetch(SUPABASE_URL+'/rest/v1/strategy_performance',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(row)
+    });
+  }catch(e){console.warn('Strategy perf write failed',e);}
+}
+
+async function recordStrategyExit(trade){
+  if(!SB.user||!trade||trade.type!=='SELL')return;
+  try{
+    var token=await getAuthToken();
+    // Find matching BUY entry (most recent unresolved for this asset)
+    var resp=await fetch(SUPABASE_URL+'/rest/v1/strategy_performance?user_id=eq.'+SB.user.id+'&asset_id=eq.'+trade.id+'&signal_type=eq.BUY&exit_price=is.null&order=created_at.desc&limit=1',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token}
+    });
+    var matches=await resp.json();
+    if(!Array.isArray(matches)||!matches.length)return;
+    var entry=matches[0];
+    var holdMs=new Date().getTime()-new Date(entry.created_at).getTime();
+    var holdMin=Math.round(holdMs/60000);
+    var pnl=trade.pnl||0;
+    var patch={exit_price:trade.price,pnl:Math.round(pnl*100)/100,hold_duration_minutes:holdMin,was_profitable:pnl>0};
+    fetch(SUPABASE_URL+'/rest/v1/strategy_performance?id=eq.'+entry.id,{
+      method:'PATCH',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(patch)
+    });
+  }catch(e){console.warn('Strategy perf exit update failed',e);}
+}
+
+// Task 1c: Load historical performance and use to initialize stratWeights
+async function loadStrategyPerformance(){
+  if(!SB.user)return;
+  try{
+    var token=await getAuthToken();
+    var resp=await fetch(SUPABASE_URL+'/rest/v1/strategy_performance?user_id=eq.'+SB.user.id+'&was_profitable=not.is.null&order=created_at.desc&limit=500',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token}
+    });
+    var data=await resp.json();
+    if(!Array.isArray(data)||data.length<5)return; // need minimum sample
+    // Compute win rate per strategy
+    var byStrat={};
+    data.forEach(function(r){
+      if(!byStrat[r.strategy])byStrat[r.strategy]={wins:0,total:0};
+      byStrat[r.strategy].total++;
+      if(r.was_profitable)byStrat[r.strategy].wins++;
+    });
+    // Update weights based on win rates (50% = neutral 1.0, scale linearly)
+    var updated=false;
+    Object.keys(byStrat).forEach(function(strat){
+      var s=byStrat[strat];
+      if(s.total<3||!bot.stratWeights[strat])return; // need min sample
+      var wr=s.wins/s.total;
+      // Map: 0% -> 0.5, 50% -> 1.0, 100% -> 1.5
+      var weight=0.5+wr;
+      bot.stratWeights[strat]=Math.round(weight*100)/100;
+      updated=true;
+    });
+    if(updated){
+      console.log('Strategy weights initialized from historical performance:',bot.stratWeights);
+      blog('Strategy weights loaded from '+data.length+' historical trades');
+    }
+  }catch(e){console.warn('Failed to load strategy performance',e);}
+}
 
 // Override watchlist save
 var _origAddWL=window.addWL;
@@ -2878,6 +3035,275 @@ window.autoRebalance=function(){
   setTimeout(renderRebalance,500);
 };
 
+// ===================== NEWS FEED (Batch 5 Task 2) =====================
+var _newsCache=[];var _newsLastFetch=0;
+
+function fetchCryptoNews(){
+  if(Date.now()-_newsLastFetch<120000&&_newsCache.length)return Promise.resolve(_newsCache);
+  return fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(d&&d.Data&&d.Data.length){
+        _newsCache=d.Data.slice(0,20);_newsLastFetch=Date.now();
+      }
+      return _newsCache;
+    })
+    .catch(function(){return _newsCache;});
+}
+
+function timeAgo(ts){
+  var d=Math.floor((Date.now()/1000)-ts);
+  if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';
+  if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago';
+}
+
+function renderNewsFeed(){
+  fetchCryptoNews().then(function(news){
+    // Dashboard sidebar news
+    var el=document.getElementById('news-feed');
+    if(el&&news.length){
+      el.innerHTML=news.slice(0,8).map(function(n){
+        return '<a href="'+n.url+'" target="_blank" rel="noopener" style="display:block;text-decoration:none;padding:4px 6px;background:var(--s2);border-radius:4px;margin-bottom:3px;border-left:3px solid var(--blu);cursor:pointer;transition:background .15s" onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'var(--s2)\'">'+
+          '<div style="font-size:10px;color:var(--t1);line-height:1.3;margin-bottom:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+n.title+'</div>'+
+          '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:8px;color:var(--blu);font-weight:600;background:var(--s3);padding:1px 4px;border-radius:2px">'+n.source+'</span><span style="font-size:8px;color:var(--t2)">'+timeAgo(n.published_on)+'</span></div>'+
+        '</a>';
+      }).join('');
+    }
+    // Analysis page news (filtered by selected asset)
+    renderAnalysisNews(news);
+    // Feed into ticker
+    if(news.length&&!_tickerNews.length){
+      var top3=news.slice(0,2);
+      top3.forEach(function(n){
+        var short=n.title.length>60?n.title.substring(0,57)+'...':n.title;
+        _tickerNews.push(short);
+      });
+      if(_tickerNews.length>3)_tickerNews.length=3;
+    }
+  });
+}
+
+function renderAnalysisNews(news){
+  var el=document.getElementById('c-analysis-news');if(!el)return;
+  var label=document.getElementById('news-asset-label');
+  if(!news||!news.length){el.innerHTML='<div class="text-t2 text-xs text-center py-4">No news available</div>';return;}
+  // Filter by selected asset symbol if possible
+  var a=findA(sel);
+  var filtered=news;
+  if(a){
+    var terms=[a.sym.toLowerCase(),a.name.toLowerCase()];
+    if(a.sym==='BTC')terms.push('bitcoin');
+    if(a.sym==='ETH')terms.push('ethereum');
+    if(a.sym==='SOL')terms.push('solana');
+    if(a.sym==='XRP')terms.push('ripple');
+    if(a.sym==='ADA')terms.push('cardano');
+    if(a.sym==='BNB')terms.push('binance');
+    var assetNews=news.filter(function(n){
+      var t=(n.title+' '+n.body).toLowerCase();
+      return terms.some(function(term){return t.indexOf(term)>-1;});
+    });
+    if(assetNews.length>0){filtered=assetNews;if(label)label.textContent=a.sym;}
+    else{if(label)label.textContent='All';}
+  }
+  el.innerHTML=filtered.slice(0,10).map(function(n){
+    return '<a href="'+n.url+'" target="_blank" rel="noopener" class="sig" style="display:block;text-decoration:none;cursor:pointer;transition:background .15s" onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'var(--s2)\'">'+
+      '<div style="font-size:11px;color:var(--t1);line-height:1.4;margin-bottom:4px">'+n.title+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center">'+
+        '<span style="font-size:9px;color:var(--blu);font-weight:600;background:var(--s3);padding:1px 6px;border-radius:3px">'+n.source+'</span>'+
+        '<span style="font-size:9px;color:var(--t2)">'+timeAgo(n.published_on)+'</span>'+
+      '</div>'+
+    '</a>';
+  }).join('');
+}
+
+// ===================== TRADE REPLAY (Batch 5 Task 3) =====================
+var _replayChartInst=null;
+
+function populateReplayAssets(){
+  var sel=document.getElementById('replay-asset');if(!sel)return;
+  // Get unique assets from trades
+  var seen={};var assets=[];
+  account.trades.forEach(function(t){
+    if(!seen[t.id]){seen[t.id]=true;assets.push({id:t.id,sym:t.sym});}
+  });
+  if(!assets.length){
+    // Also add watchlist assets
+    getWL().forEach(function(a){if(!seen[a.id]){seen[a.id]=true;assets.push(a);}});
+  }
+  sel.innerHTML=assets.map(function(a){return'<option value="'+a.id+'">'+a.sym+'</option>'}).join('');
+}
+
+window.renderTradeReplay=function(){
+  var assetId=gv('replay-asset');if(!assetId)return;
+  var a=findA(assetId);if(!a)return;
+  var el=document.getElementById('c-trade-replay');if(!el)return;
+  var statsEl=document.getElementById('trade-replay-stats');
+  var summEl=document.getElementById('replay-summary');
+
+  // Get trades for this asset
+  var assetTrades=account.trades.filter(function(t){return t.id===assetId});
+  if(!assetTrades.length){
+    el.innerHTML='<div class="flex items-center justify-center h-full text-t2 text-xs">No trades for '+a.sym+'</div>';
+    if(statsEl)statsEl.innerHTML='';
+    if(summEl)summEl.textContent='0 trades';
+    return;
+  }
+
+  // Get OHLC data
+  var data=mkt==='crypto'?(ohlcDeep[assetId]&&ohlcDeep[assetId].length>20?ohlcDeep[assetId]:ohlc[assetId]):stkData[assetId];
+  if(!data||data.length<5){
+    el.innerHTML='<div class="flex items-center justify-center h-full text-t2 text-xs">No chart data for '+a.sym+'. Load chart first.</div>';
+    return;
+  }
+
+  // Create chart
+  if(_replayChartInst){try{_replayChartInst.remove()}catch(e){}_replayChartInst=null;}
+  _replayChartInst=mkChart('c-trade-replay');if(!_replayChartInst)return;
+  chrt['trade-replay']=_replayChartInst;
+
+  var _grn=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
+  var _red=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
+  var _blu=getComputedStyle(document.documentElement).getPropertyValue('--blu').trim()||'#58a6ff';
+
+  // Candlestick series
+  var cSeries=_replayChartInst.addCandlestickSeries({upColor:_grn,downColor:_red,wickUpColor:_grn,wickDownColor:_red,borderUpColor:_grn,borderDownColor:_red});
+  cSeries.setData(data);
+
+  // Build markers from trades (reverse to chronological)
+  var chronTrades=assetTrades.slice().reverse();
+  var markers=[];
+  var roundTrips=[];
+  var buyStack=[];
+
+  chronTrades.forEach(function(t){
+    // Find nearest candle time for this trade
+    var tradeTs=t.ts?Math.floor(t.ts/1000):0;
+    if(!tradeTs)return;
+    var nearestTime=data[0].time;
+    var minDist=Math.abs(tradeTs-data[0].time);
+    for(var i=1;i<data.length;i++){
+      var dist=Math.abs(tradeTs-data[i].time);
+      if(dist<minDist){minDist=dist;nearestTime=data[i].time;}
+    }
+
+    if(t.type==='BUY'){
+      markers.push({time:nearestTime,position:'belowBar',color:_blu,shape:'arrowUp',text:'BUY $'+fp(t.price)});
+      buyStack.push({time:nearestTime,price:t.price,trade:t});
+    }else if(t.type==='SELL'){
+      markers.push({time:nearestTime,position:'aboveBar',color:t.pnl>=0?_grn:_red,shape:'arrowDown',text:'SELL '+(t.pnl>=0?'+':'')+' $'+fp(Math.abs(t.pnl||0))});
+      if(buyStack.length){
+        var buyEntry=buyStack.shift();
+        roundTrips.push({entryTime:buyEntry.time,exitTime:nearestTime,entryPrice:buyEntry.price,exitPrice:t.price,pnl:t.pnl||0});
+      }
+    }
+  });
+
+  // Sort and deduplicate markers by time
+  markers.sort(function(a,b){return a.time-b.time});
+  var seenTimes={};
+  markers=markers.filter(function(m){
+    var key=m.time+'_'+m.text;
+    if(seenTimes[key])return false;
+    seenTimes[key]=true;return true;
+  });
+
+  if(markers.length)cSeries.setMarkers(markers);
+  _replayChartInst.timeScale().fitContent();
+
+  // Summary stats
+  var sells=assetTrades.filter(function(t){return t.type==='SELL'&&t.pnl!==undefined});
+  var wins=sells.filter(function(t){return t.pnl>0}).length;
+  var totalPnl=sells.reduce(function(s,t){return s+(t.pnl||0)},0);
+
+  if(summEl)summEl.textContent=assetTrades.length+' trades, '+sells.length+' completed';
+
+  if(statsEl&&sells.length){
+    var avgPnl=totalPnl/sells.length;
+    var winRate=sells.length?(wins/sells.length*100):0;
+    // Avg hold time from round trips
+    var holdStr='--';
+    if(roundTrips.length){
+      var avgHoldSec=roundTrips.reduce(function(s,r){return s+(r.exitTime-r.entryTime)},0)/roundTrips.length;
+      holdStr=avgHoldSec>86400?(avgHoldSec/86400).toFixed(1)+'d':avgHoldSec>3600?(avgHoldSec/3600).toFixed(1)+'h':(avgHoldSec/60).toFixed(0)+'m';
+    }
+    // Best entry timing
+    var bestEntry=sells.reduce(function(best,t){return(t.pnl||0)>(best.pnl||0)?t:best},sells[0]);
+    var bestTime=bestEntry.time||'--';
+
+    statsEl.innerHTML='<div class="grid grid-cols-4 gap-3" style="font-size:11px">'+
+      '<div class="bg-s2 rounded p-2 text-center"><div class="text-t2" style="font-size:9px">Total Trades</div><div class="font-bold text-t1">'+assetTrades.length+'</div></div>'+
+      '<div class="bg-s2 rounded p-2 text-center"><div class="text-t2" style="font-size:9px">Win Rate</div><div class="font-bold '+(winRate>=50?'text-grn':'text-red')+'">'+winRate.toFixed(0)+'%</div></div>'+
+      '<div class="bg-s2 rounded p-2 text-center"><div class="text-t2" style="font-size:9px">Avg Hold Time</div><div class="font-bold text-t1">'+holdStr+'</div></div>'+
+      '<div class="bg-s2 rounded p-2 text-center"><div class="text-t2" style="font-size:9px">Net P&L</div><div class="font-bold '+(totalPnl>=0?'text-grn':'text-red')+'">'+(totalPnl>=0?'+':'-')+'$'+fp(Math.abs(totalPnl))+'</div></div>'+
+    '</div>'+
+    '<div class="mt-2" style="font-size:10px"><span class="text-t2">Best entry:</span> <span class="text-grn font-bold">'+bestEntry.sym+' @ '+bestTime+'</span> <span class="text-grn">+$'+fp(bestEntry.pnl)+'</span></div>';
+  } else if(statsEl){
+    statsEl.innerHTML='<div class="text-t2 text-xs text-center py-2">Complete round-trip trades to see stats</div>';
+  }
+};
+
+// ===================== DASHBOARD IMPROVEMENTS (Batch 5 Task 4) =====================
+// Task 4a: Market Overview Cards
+var _mktOverviewData={};
+
+function fetchMarketOverview(){
+  // CoinGecko global endpoint
+  fetch('https://api.coingecko.com/api/v3/global')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(d&&d.data){
+        _mktOverviewData=d.data;
+        var capEl=document.getElementById('mkt-cap');
+        var domEl=document.getElementById('mkt-btcdom');
+        var volEl=document.getElementById('mkt-vol24');
+        if(capEl)capEl.textContent='$'+fp(d.data.total_market_cap.usd);
+        if(domEl)domEl.textContent=d.data.market_cap_percentage.btc.toFixed(1)+'%';
+        if(volEl)volEl.textContent='$'+fp(d.data.total_volume.usd);
+      }
+    }).catch(function(){});
+  // Fear & Greed from market_sentiment table
+  fetch(SUPABASE_URL+'/rest/v1/market_sentiment?order=date.desc&limit=1',{
+    headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+  }).then(function(r){return r.json()})
+    .then(function(d){
+      if(Array.isArray(d)&&d.length){
+        var fng=d[0];
+        var fngEl=document.getElementById('mkt-fng');
+        if(fngEl){
+          var val=fng.value;var cls=fng.classification||'';
+          var color=val<=25?'text-red':val<=45?'text-ylw':val<=55?'text-t2':val<=75?'text-grn':'text-grn';
+          fngEl.textContent=val+' ('+cls+')';
+          fngEl.className='font-bold '+color;
+          fngEl.style.fontSize='12px';
+        }
+      }
+    }).catch(function(){});
+}
+
+// Task 4b: Trending Assets (top movers)
+function renderTrending(){
+  var wla=getWL();
+  var items=wla.map(function(a){
+    return{a:a,ch:Math.abs(chOf(a.id)||0),raw:chOf(a.id)||0,p:prOf(a.id)};
+  }).filter(function(i){return i.p>0});
+  items.sort(function(a,b){return b.ch-a.ch});
+  var top3=items.slice(0,3);
+  var row=document.getElementById('trending-row');
+  var el=document.getElementById('trending-assets');
+  if(!el||!row)return;
+  if(!top3.length||top3[0].ch<0.1){row.style.display='none';return;}
+  row.style.display='flex';
+  el.innerHTML=top3.map(function(item){
+    var a=item.a,ch=item.raw,u=ch>=0;
+    var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];var sp=spark(d,u);
+    return '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--s1);border:1px solid var(--bd);border-radius:6px;flex:1;min-width:0;cursor:pointer" onclick="_sel(\''+a.id+'\')">'+
+      '<span class="font-bold text-t1" style="font-size:11px">'+a.sym+'</span>'+
+      sp+
+      '<span class="font-bold '+(u?'text-grn':'text-red')+'" style="font-size:11px">'+(u?'+':'')+ch.toFixed(2)+'%</span>'+
+    '</div>';
+  }).join('');
+}
+
 // ===================== BOT STATUS WIDGET (Batch 4 Task 4) =====================
 var _bwOpen=false;
 
@@ -2944,6 +3370,11 @@ loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
 // Batch 3: Load S/R levels and historical context from Supabase (async, non-blocking)
 setTimeout(function(){loadAllSupportResistance();},3000);
 setTimeout(function(){loadAllHistorical();},4000);
+// Batch 5: News feed, market overview, trending
+setTimeout(function(){renderNewsFeed();},2000);
+setTimeout(function(){fetchMarketOverview();},3500);
+setInterval(function(){renderNewsFeed();},120000); // Refresh news every 2 min
+setInterval(function(){fetchMarketOverview();renderTrending();},300000); // Refresh market overview every 5 min
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
 setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
 
