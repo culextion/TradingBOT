@@ -202,8 +202,8 @@ select.inp{appearance:auto}
     </div>
     <!-- Row 2: 3 panels (ETH, SOL, Indicators) -->
     <div class="grid grid-cols-3 gap-1.5 col-span-2 min-h-0 overflow-hidden">
-      <div class="panel"><div class="ph"><span class="title" id="t-c2">ETH/USD</span><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c2',0.04,this)">1H</button><button class="tf" onclick="tfClick('c2',1,this)">1D</button><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
-      <div class="panel"><div class="ph"><span class="title" id="t-c3">SOL/USD</span><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c3',0.04,this)">1H</button><button class="tf" onclick="tfClick('c3',1,this)">1D</button><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
+      <div class="panel"><div class="ph"><select id="sel-c2" class="title" onchange="switchTile('c2',this.value)" style="background:none;border:none;color:var(--t2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;padding:0"></select><div class="flex items-center gap-1"><span id="pr-c2" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c2',0.04,this)">1H</button><button class="tf" onclick="tfClick('c2',1,this)">1D</button><button class="tf on" onclick="tfClick('c2',7,this)">7D</button><button class="tf" onclick="tfClick('c2',30,this)">30D</button><button class="tf" onclick="tfClick('c2',90,this)">90D</button></div></div><div class="pb" id="c-c2"></div></div>
+      <div class="panel"><div class="ph"><select id="sel-c3" class="title" onchange="switchTile('c3',this.value)" style="background:none;border:none;color:var(--t2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;padding:0"></select><div class="flex items-center gap-1"><span id="pr-c3" class="text-grn font-bold text-xs">--</span><button class="tf" onclick="tfClick('c3',0.04,this)">1H</button><button class="tf" onclick="tfClick('c3',1,this)">1D</button><button class="tf on" onclick="tfClick('c3',7,this)">7D</button><button class="tf" onclick="tfClick('c3',30,this)">30D</button><button class="tf" onclick="tfClick('c3',90,this)">90D</button></div></div><div class="pb" id="c-c3"></div></div>
       <div class="panel"><div class="ph"><span>Indicators</span></div><div class="pb p-2 overflow-y-auto" id="c-ind"></div></div>
     </div>
   </div>
@@ -1013,10 +1013,24 @@ function loadTile(key,assetId,days){
 
 window.tfClick=function(key,days,btn){btn.parentElement.querySelectorAll('.tf').forEach(function(b){b.classList.remove('on')});btn.classList.add('on');loadTile(key,tileAsset[key],days);};
 
+window.switchTile=function(key,assetId){
+  loadTile(key,assetId,tileDays[key]||7);
+  var a=findA(assetId);if(a){var te=document.getElementById('t-'+key);if(te)te.textContent=a.sym+'/USD';}
+};
+
+function populateTileSelectors(){
+  ['c2','c3'].forEach(function(key){
+    var sel=document.getElementById('sel-'+key);if(!sel)return;
+    var assets=getWL();
+    sel.innerHTML=assets.map(function(a){return'<option value="'+a.id+'"'+(tileAsset[key]===a.id?' selected':'')+'>'+a.sym+'/USD</option>'}).join('');
+  });
+}
+
 // ===================== LOAD ALL =====================
 function loadAll(){
   var w=getWL();tileAsset={main:w[0].id,c2:(w[1]||w[0]).id,c3:(w[2]||w[0]).id};
   setStatus('warn','Loading real prices...');
+  populateTileSelectors();
 
   // Both crypto and stocks use Finnhub for live prices
   fhAllQuotes(w).then(function(){
@@ -2077,11 +2091,12 @@ window.doSearch=function(q){clearTimeout(searchTO);var el=document.getElementByI
   },350);};
 
 function showSR(res){var el=document.getElementById('search-drop');if(!res.length){el.classList.remove('open');return;}
-  el.innerHTML=res.map(function(r){var inW=wl.some(function(w){return w.id===r.id})||getAssets().some(function(a){return a.id===r.id});
+  var currentWL=getWL();
+  el.innerHTML=res.map(function(r){var inW=currentWL.some(function(w){return w.id===r.id});
     return'<div class="search-item" onclick="addWL(\''+r.id+'\',\''+r.sym+'\',\''+r.name.replace(/'/g,"\\'")+'\')"><div><span class="font-bold text-t1">'+r.sym+'</span> <span class="text-t2" style="font-size:10px">'+r.name+'</span></div>'+(inW?'<span class="text-grn" style="font-size:9px">✓</span>':'<span class="text-blu" style="font-size:9px">+ Add</span>')+'</div>'}).join('');
   el.classList.add('open');}
 
-window.addWL=function(id,sym,name){if(wl.some(function(w){return w.id===id})||getAssets().some(function(a){return a.id===id}))return;
+window.addWL=function(id,sym,name){if(getWL().some(function(w){return w.id===id}))return;
   wl.push({id:id,sym:sym,name:name,mkt:mkt});try{localStorage.setItem('tb_wl',JSON.stringify(wl))}catch(e){}
   if(mkt==='crypto'){
     var csym='BINANCE:'+sym+'USDT';
