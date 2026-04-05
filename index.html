@@ -231,15 +231,15 @@ select.inp{appearance:auto}
       <div id="search-drop" class="search-drop"></div>
     </div>
     <div class="p-2 flex-1 overflow-y-auto">
-      <div class="flex justify-between items-center mb-1">
-        <div class="flex items-center gap-1">
+      <div class="mb-1">
+        <div class="flex justify-between items-center">
           <span class="text-t2 uppercase font-bold" style="font-size:9px;letter-spacing:1px">Watchlist</span>
           <div class="flex gap-0.5" id="wl-view-btns">
             <button class="tf on wl-view-btn" onclick="setWLView('list',this)" style="font-size:8px;padding:1px 4px">List</button>
             <button class="tf wl-view-btn" onclick="setWLView('heatmap',this)" style="font-size:8px;padding:1px 4px">Heatmap</button>
           </div>
         </div>
-        <div class="flex gap-0.5" id="wl-sort-btns">
+        <div class="flex gap-0.5 mt-1" id="wl-sort-btns">
           <button class="tf wl-sort-btn" onclick="setWLSort('name',this)" style="font-size:8px;padding:1px 4px">Name</button>
           <button class="tf wl-sort-btn" onclick="setWLSort('price',this)" style="font-size:8px;padding:1px 4px">Price</button>
           <button class="tf on wl-sort-btn" onclick="setWLSort('change',this)" style="font-size:8px;padding:1px 4px">Change</button>
