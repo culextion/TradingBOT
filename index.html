@@ -339,6 +339,9 @@ select.inp{appearance:auto}
         <button id="btn-stop" class="btn btn-r flex-1" onclick="stopBot()" style="display:none">Stop Bot</button>
         <button class="btn btn-r" onclick="killAll()" style="font-size:9px;padding:4px 8px" title="Close all positions">KILL</button>
       </div>
+      <div class="flex gap-2 mt-1">
+        <button class="btn flex-1" style="background:var(--s3);color:var(--blu);padding:3px 8px;font-size:9px" onclick="forceRefreshPrices()" title="Force refresh all price data from APIs">Force Refresh</button>
+      </div>
       <div id="bot-warn" class="text-xs text-red bg-s3 rounded p-2 hidden"></div>
       <hr class="border-bd"/>
       <div class="text-t2 text-xs font-bold uppercase mb-1">24/7 Server Bot</div>
@@ -592,6 +595,18 @@ select.inp{appearance:auto}
     <div class="ph" style="padding:3px 8px;min-height:24px"><span>AI Summary</span><span class="text-t2" style="font-size:9px;margin-left:6px" id="ai-summary-time"></span></div>
     <div class="pb p-2" id="ai-summary" style="font-size:10px;line-height:1.4;background:linear-gradient(135deg,rgba(88,166,255,.04),rgba(188,140,255,.04));border-radius:0 0 8px 8px">
       <div class="text-t2 text-xs text-center">Start bot for AI summaries</div>
+    </div>
+  </div>
+  <!-- Connection Health Dashboard -->
+  <div class="panel" style="grid-column:2/4;max-height:44px" id="conn-health-panel">
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:10px;flex-wrap:wrap">
+      <div class="flex items-center gap-1"><span id="conn-dot" style="width:8px;height:8px;border-radius:50%;background:var(--grn);display:inline-block" class="pulse"></span><span id="conn-status" class="font-bold text-t1">Live</span><span id="conn-age" class="text-t2" style="font-size:9px">-- last update 0s ago</span></div>
+      <span style="border-left:1px solid var(--bd);height:14px"></span>
+      <div class="flex items-center gap-1 text-t2" style="font-size:9px"><span>WS Stock:</span><span id="conn-ws-stock" class="font-bold text-grn">--</span></div>
+      <div class="flex items-center gap-1 text-t2" style="font-size:9px"><span>WS Crypto:</span><span id="conn-ws-crypto" class="font-bold text-grn">--</span></div>
+      <span style="border-left:1px solid var(--bd);height:14px"></span>
+      <div id="conn-recovery-badge" style="display:none;background:rgba(248,81,73,.15);color:var(--red);padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700">RECOVERY MODE</div>
+      <button class="btn" style="background:var(--s3);color:var(--blu);padding:2px 8px;font-size:9px;margin-left:auto" onclick="forceRefreshPrices()" title="Force refresh all price data">Force Refresh</button>
     </div>
   </div>
   <div class="panel" style="grid-column:2/4;max-height:120px">
@@ -975,7 +990,9 @@ var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
   cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
   stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0}, // Task 3b + Batch 3 + Batch 8
   consecutiveLosses:0,                                   // Task 3d
-  pausedUntil:0                                          // Task 3d
+  pausedUntil:0,                                         // Task 3d
+  tickCount:0,                                           // Tick counter for summary logging
+  lastSignalSummary:''                                   // Last signal summary for periodic log
 };
 var apiQ=[],apiOn=false;
 var tileDays={main:7,c2:7,c3:7};
@@ -1118,6 +1135,7 @@ function fhConnectStockWS(symbols){
     symbols.forEach(function(sym){fhStockWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
     ConnGuard.wsStockAlive=true;ConnGuard.wsLastStockPing=Date.now();
     console.log('Stock WS connected:',symbols.length,'symbols');
+    if(bot.on)blog('WebSocket connected (stocks, '+symbols.length+' symbols)','info');
   };
   fhStockWs.onmessage=function(e){ConnGuard.onWSMessage('stock');handleFhMessage(e.data,'stock')};
   fhStockWs.onerror=function(){ConnGuard.wsStockAlive=false};
@@ -1132,6 +1150,7 @@ function fhConnectCryptoWS(symbols){
     symbols.forEach(function(sym){fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
     ConnGuard.wsCryptoAlive=true;ConnGuard.wsLastCryptoPing=Date.now();
     console.log('Crypto WS connected:',symbols.length,'symbols');
+    if(bot.on)blog('WebSocket connected (crypto, '+symbols.length+' symbols)','info');
   };
   fhCryptoWs.onmessage=function(e){ConnGuard.onWSMessage('crypto');handleFhMessage(e.data,'crypto')};
   fhCryptoWs.onerror=function(){ConnGuard.wsCryptoAlive=false};
@@ -1617,7 +1636,8 @@ function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)ret
     var totalCost=t.type==='BUY'?(t.amount||0):(t.qty*(t.price||0));
     var h='<div style="background:var(--s2);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:11px;border-left:3px solid '+(t.type==='BUY'?'var(--blu)':t.pnl>=0?'var(--grn)':'var(--red)')+';cursor:pointer" onclick="this.querySelector(\'.trade-detail\').style.display=this.querySelector(\'.trade-detail\').style.display===\'none\'?\'block\':\'none\'">';
     var isServer=t.serverBot||(t.reason&&t.reason.indexOf('SERVER BOT')===0);
-    h+='<div class="flex justify-between items-center"><div><span class="font-bold '+c+'">'+t.type+'</span> <span class="font-bold text-t1">'+t.sym+'</span> <span class="text-t2">\u00d7 '+t.qty.toFixed(4)+'</span>'+(isServer?' <span style="background:var(--pur);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;vertical-align:middle">\u26A1 SERVER</span>':'')+'</div><div class="flex items-center gap-2"><span class="text-t2">'+t.time+'</span>';
+    var tDisp=t.time;if(t.ts){var td=new Date(t.ts);tDisp=blogFmtTime(td);}
+    h+='<div class="flex justify-between items-center"><div><span class="font-bold '+c+'">'+t.type+'</span> <span class="font-bold text-t1">'+t.sym+'</span> <span class="text-t2">\u00d7 '+t.qty.toFixed(4)+'</span>'+(isServer?' <span style="background:var(--pur);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;vertical-align:middle">\u26A1 SERVER</span>':'')+'</div><div class="flex items-center gap-2"><span class="text-t2">'+tDisp+'</span>';
     if(t.pnl!==undefined)h+='<span class="font-bold '+(t.pnl>=0?'text-grn':'text-red')+'">'+(t.pnl>=0?'+':'-')+'$'+fp(Math.abs(t.pnl))+'</span>';
     h+='</div></div>';
     // Expandable detail
@@ -1639,7 +1659,17 @@ function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)ret
     h+='<div class="mt-2 pt-2" style="border-top:1px solid var(--bd);font-size:var(--fs-xs)">';
     h+='<div class="text-t2 font-bold mb-1">Fee Breakdown</div>';
     if(t.feeDetail){
+      var rateUsed=t.feeDetail.feeRate||0;
+      var rateLabel=t.feeDetail.feeType||'';
+      if(!rateUsed){
+        var feeProfileKey=null;for(var fk in FEE_PROFILES){if(FEE_PROFILES[fk].name===t.feeDetail.profile){feeProfileKey=fk;break;}}
+        var feeR=feeProfileKey?FEE_PROFILES[feeProfileKey]:(FEE_PROFILES.coinbase_adv);
+        var side=t.type==='BUY'?'buy':'sell';
+        rateUsed=side==='buy'?feeR.taker:feeR.maker;
+        rateLabel=side==='buy'?'taker':'maker';
+      }
       h+='<div class="grid grid-cols-2 gap-x-4 gap-y-0.5">';
+      h+='<div class="flex justify-between col-span-2 font-bold" style="background:rgba(210,153,34,.1);padding:2px 4px;border-radius:3px"><span class="text-ylw">Fee: $'+fp(t.feeDetail.exchange)+'</span><span class="text-ylw">('+(rateUsed*100).toFixed(1)+'% '+rateLabel+')</span></div>';
       h+='<div class="flex justify-between"><span class="text-t2">Exchange Fee</span><span class="text-ylw">$'+fp(t.feeDetail.exchange)+'</span></div>';
       h+='<div class="flex justify-between"><span class="text-t2">Spread Cost</span><span class="text-ylw">$'+fp(t.feeDetail.spread)+'</span></div>';
       h+='<div class="flex justify-between"><span class="text-t2">Slippage</span><span class="text-ylw">$'+fp(t.feeDetail.slippage)+'</span></div>';
@@ -1861,8 +1891,8 @@ function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||am
   var profName=(FEE_PROFILES[feeProfile]||{name:feeProfile}).name;
   var sym=(findA(id)||{sym:id}).sym;
   var t={type:'BUY',id:id,sym:sym,qty:qty,price:pr,amount:amt,invested:eff,fees:cost.total,
-    feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName},
-    time:new Date().toLocaleTimeString(),ts:Date.now(),reason:reason||null,notes:''};
+    feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName,feeRate:(FEE_PROFILES[feeProfile]||{}).taker||0,feeType:'taker'},
+    time:blogFmtTime(new Date()),ts:Date.now(),reason:reason||null,notes:''};
   account.trades.unshift(t);bot.trades++;
   showToast('[BUY] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr),'buy');
   updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
@@ -1877,8 +1907,8 @@ window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){
   var profName=(FEE_PROFILES[feeProfile]||{name:feeProfile}).name;
   var sym=(findA(id)||{sym:id}).sym;
   var t={type:'SELL',id:id,sym:sym,qty:qty,price:pr,amount:net,gross:gross,invested:invested,pnl:pnl,fees:cost.total,
-    feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName},
-    time:new Date().toLocaleTimeString(),ts:Date.now(),reason:reason||null,notes:''};
+    feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName,feeRate:(FEE_PROFILES[feeProfile]||{}).maker||0,feeType:'maker'},
+    time:blogFmtTime(new Date()),ts:Date.now(),reason:reason||null,notes:''};
   account.trades.unshift(t);bot.trades++;
   // Toast notification (Task 4a)
   showToast('[SELL] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr)+' '+(pnl>=0?'+':'')+' $'+fp(Math.abs(pnl)),pnl>=0?'sell':'warn');
@@ -1924,12 +1954,15 @@ function fetchHeldPositionPrices(){
 }
 
 // ===================== BOT ENGINE =====================
-window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';
+window.startBot=function(){bot.on=true;bot.strat=gv('strat-sel')||'hybrid';bot.tickCount=0;
   _botStartedAt=Date.now();
   document.getElementById('btn-start').style.display='none';document.getElementById('btn-stop').style.display='';
   setText('bot-status','RUNNING');document.getElementById('bot-status').className='font-bold text-xs text-grn';
   document.getElementById('mode-badge').textContent='BOT ON';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-grn border-grn pulse cursor-pointer';
-  blog('Bot started — strategy: '+(STRATS[bot.strat]||{name:bot.strat}).name);
+  blog('Bot started — strategy: '+(STRATS[bot.strat]||{name:bot.strat}).name,'info');
+  // Log initial price snapshot
+  var wl=getWL();var priceStrs=wl.slice(0,4).map(function(a){return a.sym+' $'+fp(prOf(a.id))});
+  blog('Starting prices — '+priceStrs.join(', '),'info');
   generateAISummary();
   runBot();bot.iv=setInterval(runBot,10000);};
 
@@ -1937,7 +1970,7 @@ window.stopBot=function(){bot.on=false;clearInterval(bot.iv);
   document.getElementById('btn-start').style.display='';document.getElementById('btn-stop').style.display='none';
   setText('bot-status','STOPPED');document.getElementById('bot-status').className='font-bold text-xs text-red';
   document.getElementById('mode-badge').textContent='PAPER';document.getElementById('mode-badge').className='text-xs border rounded px-2 py-0.5 text-ylw border-ylw cursor-pointer';
-  blog('Bot stopped');};
+  blog('Bot stopped — ran '+bot.tickCount+' ticks, '+bot.trades+' trades, P&L: '+(bot.pnl>=0?'+':'')+' $'+fp(Math.abs(bot.pnl)),'info');};
 
 window.killAll=function(){stopBot();var s=[];account.positions.slice().forEach(function(p){sellA(p.id);s.push(p.sym)});
   blog('KILL — closed: '+s.join(', '));if(s.length)alert('Closed '+s.length+' positions')};
@@ -2132,18 +2165,19 @@ function updateBotPerf(){
 }
 
 function runBot(){if(!bot.on)return;
+  bot.tickCount++;
 
   // Check if bot is enabled for current market
   var botMarkets=getBotMarkets();
-  if(mkt==='crypto'&&!botMarkets.crypto){blog('Bot skipped — crypto trading disabled');updateNextMoves();return;}
-  if(mkt==='stocks'&&!botMarkets.stocks){blog('Bot skipped — stocks trading disabled');updateNextMoves();return;}
+  if(mkt==='crypto'&&!botMarkets.crypto){updateNextMoves();return;}
+  if(mkt==='stocks'&&!botMarkets.stocks){updateNextMoves();return;}
 
   // Batch 6: Check pending orders every tick
   checkPendingOrders();
 
   // Batch 6: Schedule check
   if(botSchedule.enabled&&!isWithinSchedule()){
-    blog('SCHEDULE: Outside trading hours — skipping tick');
+    if(bot.tickCount%6===0)blog('SCHEDULE: Outside trading hours — skipping tick','info');
     return;
   }
 
@@ -2151,23 +2185,33 @@ function runBot(){if(!bot.on)return;
   var now=Date.now();
   if(bot.pausedUntil>now){
     var remMin=Math.ceil((bot.pausedUntil-now)/60000);
-    blog('BOT PAUSED: '+remMin+'min remaining after 3 consecutive losses');
+    if(bot.tickCount%6===0)blog('BOT PAUSED: '+remMin+'min remaining after 3 consecutive losses','warning');
     return;
   }
   if(bot.pausedUntil>0&&now>=bot.pausedUntil){
     bot.pausedUntil=0;bot.consecutiveLosses=0;
-    blog('Bot resuming after cooldown — consecutive loss counter reset');
+    blog('Bot resuming after cooldown — consecutive loss counter reset','info');
   }
 
-  // If data seems stale, try a quick refresh before giving up
+  // Update connection health dashboard
+  updateConnHealth();
+
+  // Aggressive data refresh when stale — try on EVERY tick
   var cs=ConnGuard.canTradeSafely();
-  if(!cs.safe){
-    fhAllQuotes(getWL()).then(function(){
-      ConnGuard.onPriceUpdate();ConnGuard.dataQuality='fresh';ConnGuard.staleSec=0;
-    }).catch(function(){});
-    if(ConnGuard.staleSec>180){blog('PAUSED: '+cs.reason+' — attempting refresh');return;}
+  if(cs.warn){
+    // 300-600s: warn but still trade
+    if(bot.tickCount%3===0)blog('WARNING: '+cs.reason,'warning');
+    ConnGuard.aggressiveRefresh();
   }
-  if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit');stopBot();return;}
+  if(!cs.safe){
+    // >600s: block trading, aggressive refresh every tick
+    ConnGuard.aggressiveRefresh();
+    // In recovery mode, still run stop-loss checks but block buys
+    if(ConnGuard.recoveryMode){
+      if(bot.tickCount%6===0)blog('RECOVERY MODE — using last known prices. Stop-loss monitoring active, new buys disabled.','warning');
+    }
+  }
+  if(account.dayPnL<=-parseFloat(gv('r-dll')||2000)){blog('Daily loss limit hit','error');stopBot();return;}
 
   // Task 3c: Market regime detection — adjust risk in bearish regimes
   var regime=detectMarketRegime();
@@ -2176,7 +2220,7 @@ function runBot(){if(!bot.on)return;
     regimeMultiplier=0.5; // Halve position size in bear markets
   }
 
-  // Stop/trail check
+  // Stop/trail check — ALWAYS run even in recovery mode (protective sells)
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
   var trail=parseFloat(gv('r-trail')||3)/100;
   // Tighten stops in bearish regime (Task 3c)
@@ -2192,6 +2236,28 @@ function runBot(){if(!bot.on)return;
 
   trackEquity();updateBotPerf();
 
+  // In recovery mode or data unsafe: only run stop-losses above, skip new buys
+  if(ConnGuard.recoveryMode || (!cs.safe)){
+    updateNextMoves();generateAISummary();
+    return;
+  }
+
+  // Tick summary logging: every 10 ticks (~100s)
+  if(bot.tickCount%10===0){
+    var _wl=getWL();
+    var _pv=portVal();var _pnl=_pv-account.start;var _pnlPct=(_pnl/account.start*100);
+    var _moves=analyzeMarket();
+    var _sigStrs=_moves.slice(0,3).map(function(m){return m.sym+' '+m.strat+' '+Math.round(m.conf)+'%'});
+    var _tickLog='[Tick '+bot.tickCount+'] Analyzing '+_wl.length+' '+mkt+' assets';
+    if(_moves.length)_tickLog+=' | Signals: '+_sigStrs.join(', ');
+    else _tickLog+=' | No signals';
+    _tickLog+=' | Positions: '+account.positions.length+'/'+gv('r-max');
+    _tickLog+=' | P&L: '+(_pnl>=0?'+':'')+' $'+fp(Math.abs(_pnl))+' ('+(_pnl>=0?'+':'')+_pnlPct.toFixed(2)+'%)';
+    blog(_tickLog,'info');
+    // Log portfolio value update
+    blog('Portfolio: $'+fp(_pv)+' ('+(_pnl>=0?'+':'-')+'$'+fp(Math.abs(_pnl))+', '+(_pnl>=0?'+':'')+_pnlPct.toFixed(2)+'%)','info');
+  }
+
   var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
   // Batch 8: Smart position sizing
   var _kResult=calcKellySize(75); // default conf; will be recalculated per signal
@@ -2203,6 +2269,9 @@ function runBot(){if(!bot.on)return;
     else if(_positionSizingMode==='confidence')psiEl.innerHTML='Confidence-Scaled: size adjusts per signal confidence.';
     else psiEl.innerHTML='Fixed: '+gv('r-size')+'% of portfolio per trade.';
   }
+
+  // Block new buys in recovery mode
+  if(!ConnGuard.canBuyInRecovery()){updateNextMoves();generateAISummary();return;}
 
   // DCA mode
   if(bot.strat==='dca'){
@@ -2230,6 +2299,15 @@ function runBot(){if(!bot.on)return;
     if(dd&&dd.length>=20)_momScores[a.id]=calcMomentumScore(dd,a.id).score;
   });
 
+  // Log near-miss signals (approaching but not triggered)
+  if(bot.tickCount%5===0){
+    moves.forEach(function(m){
+      if(m.dir==='buy'&&m.conf>=50&&m.conf<70){
+        blog(m.sym+' '+m.strat+' signal at '+Math.round(m.conf)+'% (need 70%+ to trigger)','info');
+      }
+    });
+  }
+
   if(bot.strat==='hybrid'){
     var buys={},bestSig={};
     moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
@@ -2241,11 +2319,11 @@ function runBot(){if(!bot.on)return;
       var id=candidates[ci];
       var multi=buys[id]>=2,highConf=bestSig[id]&&bestSig[id].conf>=75;
       // Task 3a: Cooldown check
-      if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago');continue;}
+      if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago','warning');continue;}
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);buyAmt=kr.size*regimeMultiplier;
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+')]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''));
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+')]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
       var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+')');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[id]=now;}
       return;}
@@ -2257,7 +2335,7 @@ function runBot(){if(!bot.on)return;
     var m=stMoves[0];
     if(m){
       var kr=calcKellySize(m.conf);buyAmt=kr.size*regimeMultiplier;
-      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+')]');
+      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+')]','trade');
       var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+')');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[m.id]=now;}
     }
@@ -2266,9 +2344,73 @@ function runBot(){if(!bot.on)return;
   generateAISummary();
 }
 
-function blog(msg){bot.logs.unshift({t:new Date().toLocaleTimeString(),m:msg});if(bot.logs.length>50)bot.logs.length=50;
+// ===================== CONNECTION HEALTH & FORCE REFRESH =====================
+window.forceRefreshPrices=function(){
+  blog('Force refresh triggered by user','info');
+  showToast('Refreshing prices...','info');
+  ConnGuard.recoveryAttempts=0;ConnGuard.lastRecoveryAttempt=0;
+  // Try Finnhub REST for current market
+  var p1=fhAllQuotes(getWL()).then(function(){
+    ConnGuard.onPriceUpdate();
+    updateTicker();updateWL();updatePulse();updateHdr();updateCorr();
+    // Log price summary
+    var wl=getWL();var priceStrs=wl.slice(0,4).map(function(a){return a.sym+' $'+fp(prOf(a.id))});
+    blog('Prices refreshed — '+priceStrs.join(', '),'info');
+    showToast('Prices refreshed','info');
+  }).catch(function(e){ConnGuard.onAPIFailure();blog('Finnhub refresh failed: '+(e.message||e),'error')});
+  // Also try CoinGecko for crypto
+  if(mkt==='crypto'){
+    cgPr().then(function(p){if(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr();}}).catch(function(){});
+  }
+  // Refresh held positions too
+  fetchHeldPositionPrices();
+  // Force WebSocket reconnect
+  if(typeof fhReconnectStock==='function')fhReconnectStock();
+  if(typeof fhReconnectCrypto==='function')fhReconnectCrypto();
+};
+
+function updateConnHealth(){
+  var h=ConnGuard.getHealthDashboard();
+  var dot=document.getElementById('conn-dot');
+  var status=document.getElementById('conn-status');
+  var age=document.getElementById('conn-age');
+  var wsStock=document.getElementById('conn-ws-stock');
+  var wsCrypto=document.getElementById('conn-ws-crypto');
+  var recovBadge=document.getElementById('conn-recovery-badge');
+  if(dot){dot.style.background='var(--'+h.statusColor+')';dot.className=h.status!=='live'?'pulse':'';}
+  if(status)status.textContent=h.statusText;
+  if(age)age.textContent=h.lastUpdate>=0?('— last update '+h.lastUpdate+'s ago'):'— no data yet';
+  if(wsStock){wsStock.textContent=h.wsStock;wsStock.className='font-bold '+(h.wsStock==='Connected'?'text-grn':'text-red');}
+  if(wsCrypto){wsCrypto.textContent=h.wsCrypto;wsCrypto.className='font-bold '+(h.wsCrypto==='Connected'?'text-grn':'text-red');}
+  if(recovBadge)recovBadge.style.display=h.recoveryMode?'':'none';
+}
+
+// Update connection health dashboard every 5s
+setInterval(updateConnHealth,5000);
+
+function blogFmtTime(d){
+  var mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';
+  h=h%12||12;
+  return mo[d.getMonth()]+' '+d.getDate()+', '+h+':'+String(m).padStart(2,'0')+' '+ap;
+}
+function blog(msg,logType){
+  if(!logType){
+    // Auto-detect log type from message content
+    if(/\bBUY\b|\bSELL\b|\bTRAIL STOP|\bTAKE PROFIT|\bSTOP LOSS/.test(msg))logType='trade';
+    else if(/\bWARN|\bPAUSED|\bstale|\baging|\bCOOLDOWN/.test(msg))logType='warning';
+    else if(/\bERROR|\bfailed|\bOFFLINE/.test(msg))logType='error';
+    else logType='info';
+  }
+  bot.logs.unshift({t:blogFmtTime(new Date()),m:msg,type:logType});
+  if(bot.logs.length>80)bot.logs.length=80;
   var el=document.getElementById('bot-log');if(!el)return;
-  el.innerHTML=bot.logs.map(function(l){return'<div class="text-xs mb-1"><span class="text-t2">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>'}).join('');}
+  var colorMap={trade:'var(--grn)',warning:'var(--ylw)',error:'var(--red)',info:'var(--blu)'};
+  el.innerHTML=bot.logs.map(function(l){
+    var c=colorMap[l.type||'info']||'var(--blu)';
+    return'<div class="text-xs mb-1" style="border-left:2px solid '+c+';padding-left:6px"><span class="text-t2" style="font-size:9px">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>';
+  }).join('');
+}
 
 // ===================== AI TRADE SUMMARY (Batch 7 Task 3) =====================
 var _botStartedAt=0;
@@ -5279,6 +5421,24 @@ function checkDailyReportTime(){
 
 // ===================== INIT =====================
 ConnGuard.init();
+// Wire ConnGuard events to bot log
+ConnGuard.onEvent(function(type,msg){
+  if(!bot.on)return; // Only log when bot is running
+  if(type==='fresh-to-stale')blog(msg,'warning');
+  else if(type==='stale-to-fresh')blog(msg,'info');
+  else if(type==='recovery-enter')blog('RECOVERY MODE — using estimated prices. Stop-loss monitoring active, new buys disabled.','warning');
+  else if(type==='recovery-exit')blog('Recovery mode ended — fresh data received, normal trading resumed.','info');
+  else if(type==='ws-dead')blog('WebSocket: '+msg,'warning');
+  else if(type==='refresh-success'){
+    blog(msg,'info');
+    // Log price summary on refresh
+    var wl=getWL();var ps=wl.slice(0,4).map(function(a){return a.sym+' $'+fp(prOf(a.id))});
+    blog('Prices refreshed — '+ps.join(', '),'info');
+  }
+  else if(type==='refresh-fail')blog(msg,'error');
+  else if(type==='online')blog('Connection restored','info');
+  else if(type==='offline')blog('Connection lost — browser offline','error');
+});
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
 loadState(); // Restore account, positions, trades, bot settings
 setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);

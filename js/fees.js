@@ -49,3 +49,14 @@ function calcRegFees(sellAmountUSD) {
   var finra = Math.min(sellAmountUSD * 0.000166, 8.30); // $0.166 per $1K, max $8.30
   return sec + finra;
 }
+
+// Format fee detail string for display: "Fee: $60.00 (0.6% taker)"
+function formatFeeDetail(cost, orderSizeUSD, side, profileKey) {
+  var profile = FEE_PROFILES[profileKey] || FEE_PROFILES.zero_fee;
+  var feeRate = side === 'buy' ? profile.taker : profile.maker;
+  var feeType = side === 'buy' ? 'taker' : 'maker';
+  var pct = (feeRate * 100).toFixed(1);
+  return 'Fee: $' + cost.fees.toFixed(2) + ' (' + pct + '% ' + feeType + ')' +
+    (cost.spread > 0.01 ? ' + $' + cost.spread.toFixed(2) + ' spread' : '') +
+    (cost.slippage > 0.01 ? ' + $' + cost.slippage.toFixed(2) + ' slippage' : '');
+}
