@@ -288,7 +288,7 @@ select.inp{appearance:auto}
     <!-- Chart grid -->
     <div class="grid gap-1.5 flex-1 overflow-hidden" style="grid-template-columns:5fr 2fr;grid-template-rows:1.6fr 1fr;min-height:0">
     <!-- Row 1: Main chart + sidebar (insights + signals stacked) -->
-    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="chart-type-btn on" onclick="setChartType('candle',this)" title="Candlestick">Candle</button><button class="chart-type-btn" onclick="setChartType('line',this)" title="Line">Line</button><button class="chart-type-btn" onclick="setChartType('area',this)" title="Area">Area</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" id="trendline-btn" onclick="toggleTrendLineDraw(this)" title="Draw trend line" style="font-size:8px;padding:1px 4px">Trend</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main" style="position:relative"></div></div>
+    <div class="panel" id="p-main"><div class="ph"><span class="title" id="t-main">BTC/USD</span><div class="flex items-center gap-1"><span id="pr-main" class="text-grn font-bold text-xs">--</span><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="chart-type-btn on" onclick="setChartType('candle',this)" title="Candlestick">Candle</button><button class="chart-type-btn" onclick="setChartType('line',this)" title="Line">Line</button><button class="chart-type-btn" onclick="setChartType('area',this)" title="Area">Area</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" onclick="clearAllDrawings()" title="Clear all drawings" style="font-size:8px;padding:1px 4px">Clear</button><span style="border-left:1px solid var(--bd);height:14px;margin:0 2px"></span><button class="tf" onclick="tfClick('main',0.04,this)">1H</button><button class="tf" onclick="tfClick('main',0.17,this)">4H</button><button class="tf" onclick="tfClick('main',1,this)">1D</button><button class="tf on" onclick="tfClick('main',7,this)">7D</button><button class="tf" onclick="tfClick('main',30,this)">30D</button><button class="tf" onclick="tfClick('main',90,this)">90D</button><button class="tf" onclick="tfClick('main',365,this)">1Y</button></div></div><div class="pb" id="c-main" style="position:relative"></div></div>
     <div class="flex flex-col gap-1.5 min-h-0 overflow-hidden">
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Market Insights</span></div><div class="pb p-2 overflow-y-auto" id="c-corr"></div></div>
       <div class="panel flex-1 min-h-0"><div class="ph"><span>Signals</span><span class="pulse text-grn" style="font-size:9px">LIVE</span></div><div class="pb p-2 overflow-y-auto" id="c-sig"></div></div>
@@ -5169,7 +5169,7 @@ loadCh=function(cid,data,key){
     ch.timeScale().fitContent();
 
     // Restore drawing overlay
-    setTimeout(function(){restoreDrawingOverlay('c-main')},100);
+    // Drawing overlay removed (lines didn't track with chart scroll)
     return;
   }
   _origLoadCh(cid,data,key);
@@ -5177,95 +5177,18 @@ loadCh=function(cid,data,key){
   if(key==='main')setTimeout(function(){restoreDrawingOverlay('c-main')},100);
 };
 
-// 4b: Drawing tools — trend line via SVG overlay
-var _drawingMode=false;
-var _drawingLines=[]; // [{x1,y1,x2,y2}]
-var _drawClickCount=0;
-var _drawStart={x:0,y:0};
-try{var dl=localStorage.getItem('ct_draw_lines');if(dl)_drawingLines=JSON.parse(dl);}catch(e){}
-
+// 4b: Drawing tools — clear all drawings
+// The SVG overlay approach doesn't track price/time coordinates so lines
+// don't move with the chart. Replaced with clear functionality only.
 window.toggleTrendLineDraw=function(btn){
-  _drawingMode=!_drawingMode;
-  _drawClickCount=0;
-  if(btn){
-    if(_drawingMode){btn.classList.add('on');btn.style.color='var(--ylw)';}
-    else{btn.classList.remove('on');btn.style.color='';}
-  }
-  var svg=document.querySelector('#c-main .chart-svg-overlay');
-  if(svg){
-    if(_drawingMode)svg.classList.add('drawing');
-    else svg.classList.remove('drawing');
-  }
+  showToast('Drawing tools coming soon — use Clear to remove existing lines','info');
 };
-
-function ensureDrawingOverlay(containerId){
-  var container=document.getElementById(containerId);if(!container)return null;
-  var svg=container.querySelector('.chart-svg-overlay');
-  if(!svg){
-    svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.classList.add('chart-svg-overlay');
-    svg.style.cssText='position:absolute;inset:0;z-index:40;pointer-events:none;width:100%;height:100%';
-    container.appendChild(svg);
-  }
-  return svg;
-}
-
-function restoreDrawingOverlay(containerId){
-  var svg=ensureDrawingOverlay(containerId);if(!svg)return;
-  // Clear existing lines
-  while(svg.firstChild)svg.removeChild(svg.firstChild);
-  // Draw saved lines
-  _drawingLines.forEach(function(ln,idx){
-    var line=document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',ln.x1+'%');line.setAttribute('y1',ln.y1+'%');
-    line.setAttribute('x2',ln.x2+'%');line.setAttribute('y2',ln.y2+'%');
-    line.style.pointerEvents='auto';
-    line.style.cursor='pointer';
-    // Right-click to delete
-    line.addEventListener('contextmenu',function(e){
-      e.preventDefault();
-      _drawingLines.splice(idx,1);
-      try{localStorage.setItem('ct_draw_lines',JSON.stringify(_drawingLines))}catch(e2){}
-      restoreDrawingOverlay(containerId);
-    });
-    svg.appendChild(line);
-  });
-  // Handle drawing clicks
-  if(_drawingMode)svg.classList.add('drawing');
-}
-
-document.addEventListener('click',function(e){
-  if(!_drawingMode)return;
-  var container=document.getElementById('c-main');if(!container)return;
-  if(!container.contains(e.target))return;
-  var rect=container.getBoundingClientRect();
-  var xPct=(e.clientX-rect.left)/rect.width*100;
-  var yPct=(e.clientY-rect.top)/rect.height*100;
-
-  if(_drawClickCount===0){
-    _drawStart={x:xPct,y:yPct};
-    _drawClickCount=1;
-    // Show temp marker
-    var svg=ensureDrawingOverlay('c-main');
-    if(svg){
-      var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      c.setAttribute('cx',xPct+'%');c.setAttribute('cy',yPct+'%');c.setAttribute('r','3');
-      c.style.fill='var(--ylw)';c.id='draw-temp-dot';
-      svg.appendChild(c);
-    }
-  }else{
-    _drawingLines.push({x1:_drawStart.x,y1:_drawStart.y,x2:xPct,y2:yPct});
-    try{localStorage.setItem('ct_draw_lines',JSON.stringify(_drawingLines))}catch(e2){}
-    _drawClickCount=0;
-    var svg=ensureDrawingOverlay('c-main');
-    var dot=svg?svg.querySelector('#draw-temp-dot'):null;
-    if(dot)dot.remove();
-    restoreDrawingOverlay('c-main');
-    // Auto exit drawing mode
-    toggleTrendLineDraw(document.getElementById('trendline-btn'));
-    showToast('Trend line drawn (right-click line to delete)','info');
-  }
-});
+window.clearAllDrawings=function(){
+  localStorage.removeItem('ct_draw_lines');
+  // Remove any SVG overlays
+  document.querySelectorAll('.chart-svg-overlay').forEach(function(svg){svg.remove();});
+  showToast('All drawings cleared','info');
+};
 
 // 4c: Fullscreen chart — double-click any chart panel
 document.addEventListener('dblclick',function(e){
