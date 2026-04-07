@@ -394,6 +394,7 @@ select.inp{appearance:auto}
         <button class="btn" style="background:var(--s3);color:var(--t1);padding:3px 8px;font-size:9px;border:1px solid var(--blu)" onclick="applyPreset('moderate')" title="15% per trade, balanced">Moderate</button>
         <button class="btn" style="background:var(--s3);color:var(--ylw);padding:3px 8px;font-size:9px" onclick="applyPreset('aggressive')" title="25% per trade, wide stops">Aggressive</button>
         <button class="btn" style="background:var(--s3);color:var(--red);padding:3px 8px;font-size:9px" onclick="applyPreset('yolo')" title="50% per trade, max risk">Max Risk</button>
+        <button class="btn" style="background:var(--s3);color:var(--blu);padding:3px 8px;font-size:9px;border:1px dashed var(--bd)" onclick="saveCustomPreset()" title="Save current settings as a custom preset">Save Custom</button>
       </div>
       <div class="grid grid-cols-2 gap-2">
         <div><label class="text-t2" style="font-size:9px">Position Size % <span class="text-t2" title="% of portfolio per trade">(per trade)</span></label><input type="number" id="r-size" value="10" class="inp" autocomplete="off"/></div>
@@ -883,6 +884,7 @@ select.inp{appearance:auto}
         <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="localStorage.clear();alert('Local cache cleared. Reload the page.')">Clear Local Cache</button>
         <button class="btn" style="background:var(--s3);color:var(--t1);font-size:var(--fs-sm)" onclick="var d=JSON.stringify(account.trades,null,2);var b=new Blob([d],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='culextrade-trades.json';a.click()">Export as JSON</button>
         <button class="btn btn-b" style="font-size:var(--fs-sm)" onclick="exportTradesCSV()">Export Trades as CSV</button>
+        <button class="btn" style="background:var(--pur);color:#fff;font-size:var(--fs-sm)" onclick="exportPDF()">Export PDF Report</button>
         <button class="btn btn-r" style="font-size:var(--fs-sm)" onclick="resetPaperAccount()">Reset Paper Account</button>
       </div>
       <p class="text-t2 mt-2" style="font-size:var(--fs-xs)">Your API keys are never stored in the browser. When exchange connections are enabled, credentials are encrypted and stored server-side via Supabase.</p>
@@ -4886,6 +4888,146 @@ window.exportTradesCSV=function(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
   showToast('Exported '+account.trades.length+' trades as CSV','info');
 };
+
+// PDF Report Export
+window.exportPDF=function(){
+  var m=RiskEngine.calcMetrics(account.trades,account.start);
+  var pv=portVal();var pnl=pv-account.start;
+  var now=new Date();
+  var dateStr=now.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  // Build HTML report
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>CulexTrade Report</title>'+
+    '<style>body{font-family:Inter,Arial,sans-serif;color:#1a1a2e;padding:40px;max-width:800px;margin:0 auto}'+
+    'h1{font-size:24px;margin-bottom:4px}h2{font-size:16px;color:#58a6ff;margin:24px 0 8px;border-bottom:2px solid #58a6ff;padding-bottom:4px}'+
+    '.subtitle{color:#666;font-size:12px;margin-bottom:24px}'+
+    '.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}'+
+    '.card{background:#f5f7fa;border-radius:8px;padding:12px;text-align:center}'+
+    '.card .label{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px}'+
+    '.card .value{font-size:20px;font-weight:700;margin-top:4px}'+
+    '.green{color:#22c55e}.red{color:#ef4444}.blue{color:#3b82f6}'+
+    'table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}'+
+    'th{background:#1a1a2e;color:#fff;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase}'+
+    'td{padding:5px 8px;border-bottom:1px solid #e5e7eb}tr:nth-child(even){background:#f9fafb}'+
+    '.footer{margin-top:32px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#999;text-align:center}'+
+    '@media print{body{padding:20px}}</style></head><body>'+
+    '<h1>CulexTrade<sup style="font-size:8px;color:#999">TM</sup> Trading Report</h1>'+
+    '<div class="subtitle">Generated '+dateStr+' · Paper Trading Account</div>';
+
+  // Portfolio Summary
+  html+='<h2>Portfolio Summary</h2><div class="grid">'+
+    '<div class="card"><div class="label">Portfolio Value</div><div class="value '+(pnl>=0?'green':'red')+'">$'+fp(pv)+'</div></div>'+
+    '<div class="card"><div class="label">Total P&L</div><div class="value '+(pnl>=0?'green':'red')+'">'+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+'</div></div>'+
+    '<div class="card"><div class="label">Total Fees</div><div class="value" style="color:#eab308">$'+fp(account.fees)+'</div></div></div>';
+
+  // Metrics
+  if(m&&m.totalTrades>0){
+    html+='<div class="grid">'+
+      '<div class="card"><div class="label">Win Rate</div><div class="value blue">'+(m.winRate*100).toFixed(1)+'%</div></div>'+
+      '<div class="card"><div class="label">Sharpe Ratio</div><div class="value blue">'+m.sharpe.toFixed(2)+'</div></div>'+
+      '<div class="card"><div class="label">Max Drawdown</div><div class="value red">'+m.maxDrawdown.toFixed(1)+'%</div></div></div>'+
+      '<div class="grid">'+
+      '<div class="card"><div class="label">Total Trades</div><div class="value">'+m.totalTrades+'</div></div>'+
+      '<div class="card"><div class="label">Profit Factor</div><div class="value blue">'+(m.profitFactor===Infinity?'∞':m.profitFactor.toFixed(2))+'</div></div>'+
+      '<div class="card"><div class="label">Expectancy</div><div class="value '+(m.expectancy>=0?'green':'red')+'">$'+fp(Math.abs(m.expectancy))+'</div></div></div>';
+  }
+
+  // Open Positions
+  if(account.positions.length){
+    html+='<h2>Open Positions</h2><table><tr><th>Asset</th><th>Qty</th><th>Avg Price</th><th>Current</th><th>Value</th><th>P&L</th></tr>';
+    account.positions.forEach(function(p){
+      var pr=prOf(p.id),val=pr*p.qty,cost=p.avgPrice*p.qty,pl=val-cost,pct=cost?(pl/cost*100):0;
+      html+='<tr><td><strong>'+p.sym+'</strong></td><td>'+p.qty.toFixed(4)+'</td><td>$'+fp(p.avgPrice)+'</td><td>$'+fp(pr)+'</td><td>$'+fp(val)+'</td><td class="'+(pl>=0?'green':'red')+'">'+(pl>=0?'+':'-')+'$'+fp(Math.abs(pl))+' ('+pct.toFixed(1)+'%)</td></tr>';
+    });
+    html+='</table>';
+  }
+
+  // Trade History (last 50)
+  html+='<h2>Trade History</h2><table><tr><th>Time</th><th>Type</th><th>Asset</th><th>Qty</th><th>Price</th><th>Fees</th><th>P&L</th></tr>';
+  account.trades.slice(0,50).forEach(function(t){
+    html+='<tr><td>'+t.time+'</td><td class="'+(t.type==='BUY'?'blue':t.pnl>=0?'green':'red')+'"><strong>'+t.type+'</strong></td><td>'+t.sym+'</td><td>'+t.qty.toFixed(4)+'</td><td>$'+fp(t.price)+'</td><td style="color:#eab308">$'+fp(t.fees||0)+'</td><td class="'+(t.pnl>=0?'green':'red')+'">'+(t.pnl!==undefined?(t.pnl>=0?'+':'-')+'$'+fp(Math.abs(t.pnl)):'—')+'</td></tr>';
+  });
+  html+='</table>';
+
+  // Risk Settings
+  html+='<h2>Risk Configuration</h2><div class="grid">'+
+    '<div class="card"><div class="label">Position Size</div><div class="value">'+gv('r-size')+'%</div></div>'+
+    '<div class="card"><div class="label">Stop Loss</div><div class="value">'+gv('r-sl')+'%</div></div>'+
+    '<div class="card"><div class="label">Take Profit</div><div class="value">'+gv('r-tp')+'%</div></div></div>';
+
+  html+='<div class="footer">CulexTrade™ Paper Trading Report · '+dateStr+' · This is a simulation — not real trading results</div>'+
+    '</body></html>';
+
+  // Open in new window for printing
+  var win=window.open('','_blank','width=850,height=1100');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(function(){win.print()},500);
+  showToast('PDF report generated — use Print > Save as PDF','info');
+};
+
+// Custom Risk Presets (save/load from localStorage + Supabase)
+window.saveCustomPreset=function(){
+  var name=prompt('Name your custom preset:');
+  if(!name)return;
+  var preset={
+    name:name,size:parseFloat(gv('r-size')),sl:parseFloat(gv('r-sl')),
+    tp:parseFloat(gv('r-tp')),max:parseInt(gv('r-max')),
+    dll:parseFloat(gv('r-dll')),trail:parseFloat(gv('r-trail'))
+  };
+  var customs=[];
+  try{var s=localStorage.getItem('ct_custom_presets');if(s)customs=JSON.parse(s);}catch(e){}
+  // Replace if same name exists
+  customs=customs.filter(function(c){return c.name!==name});
+  customs.push(preset);
+  localStorage.setItem('ct_custom_presets',JSON.stringify(customs));
+  renderCustomPresets();
+  showToast('Saved preset: '+name,'info');
+  blog('Custom risk preset saved: '+name+' ('+preset.size+'% size, '+preset.sl+'% SL)');
+};
+
+function renderCustomPresets(){
+  // Find the preset button area and add custom presets
+  var container=document.querySelector('[onclick="applyPreset(\'conservative\')"]');
+  if(!container)return;
+  var row=container.parentElement;
+  // Remove old custom buttons
+  row.querySelectorAll('.custom-preset-btn').forEach(function(b){b.remove()});
+  // Add customs
+  var customs=[];
+  try{var s=localStorage.getItem('ct_custom_presets');if(s)customs=JSON.parse(s);}catch(e){}
+  customs.forEach(function(c){
+    var btn=document.createElement('button');
+    btn.className='btn custom-preset-btn';
+    btn.style.cssText='background:var(--s3);color:var(--blu);padding:3px 8px;font-size:9px;border:1px solid var(--blu)';
+    btn.textContent=c.name;
+    btn.title=c.size+'% per trade, '+c.sl+'% SL, '+c.tp+'% TP';
+    btn.onclick=function(){
+      document.getElementById('r-size').value=c.size;
+      document.getElementById('r-sl').value=c.sl;
+      document.getElementById('r-tp').value=c.tp;
+      document.getElementById('r-max').value=c.max;
+      document.getElementById('r-dll').value=c.dll;
+      document.getElementById('r-trail').value=c.trail;
+      row.querySelectorAll('.btn').forEach(function(b){b.style.border='none';b.style.color='var(--t2)';});
+      btn.style.border='1px solid var(--blu)';btn.style.color='var(--t1)';
+      blog('Custom preset applied: '+c.name);
+    };
+    // Right-click to delete
+    btn.oncontextmenu=function(e){
+      e.preventDefault();
+      if(confirm('Delete preset "'+c.name+'"?')){
+        customs=customs.filter(function(x){return x.name!==c.name});
+        localStorage.setItem('ct_custom_presets',JSON.stringify(customs));
+        renderCustomPresets();
+        showToast('Deleted preset: '+c.name,'info');
+      }
+    };
+    row.insertBefore(btn,row.querySelector('[onclick="saveCustomPreset()"]'));
+  });
+}
+// Render on load
+setTimeout(renderCustomPresets,1000);
 
 // Task 4b: Reset paper account
 window.resetPaperAccount=function(){
