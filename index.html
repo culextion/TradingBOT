@@ -26,9 +26,9 @@ body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui
 .panel{background:var(--s1);border:1px solid var(--bd);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .panel:hover{border-color:var(--hover-bd)}
 .ph{display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--s2);border-bottom:1px solid var(--bd);min-height:28px;flex-shrink:0}
-.ph span,.ph .title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t2)}
+.ph span,.ph .title{font-size:var(--fs-sm);font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t2)}
 .pb{flex:1;overflow:auto;position:relative;min-height:0}
-.btn{border:none;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn{border:none;border-radius:4px;padding:5px 12px;font-size:var(--fs-sm);font-weight:600;cursor:pointer;font-family:inherit}
 .btn-b{background:var(--blu);color:#fff}.btn-g{background:var(--grn);color:#fff}.btn-r{background:var(--red);color:#fff}
 .btn:hover{opacity:.85}
 .tf{padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;color:var(--t2);background:none;border:1px solid transparent;cursor:pointer}
@@ -378,8 +378,13 @@ select.inp{appearance:auto}
         </select>
         <div id="strat-info" class="text-t2 text-xs mt-1 leading-relaxed"></div>
       </div>
-      <div><label class="text-t2 text-xs block mb-1">Fee Profile</label>
-        <select id="fee-sel" class="inp"><option value="coinbase_adv">Coinbase Advanced</option><option value="binance_us">Binance.US</option><option value="kraken">Kraken</option><option value="alpaca">Alpaca</option><option value="robinhood">Robinhood</option><option value="zero_fee">No Fees (Testing)</option></select>
+      <div><label class="text-t2 text-xs block mb-1">Fee Profiles</label>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-t2" style="font-size:9px">Crypto Fees</label><select id="fee-sel-crypto" class="inp"><option value="coinbase_adv">Coinbase Advanced</option><option value="coinbase_basic">Coinbase Basic</option><option value="coinbase_pro">Coinbase Pro</option><option value="coinbase_one">Coinbase One</option><option value="binance_us">Binance.US</option><option value="kraken">Kraken</option><option value="zero_fee">No Fees</option></select></div>
+          <div><label class="text-t2" style="font-size:9px">Stock Fees</label><select id="fee-sel-stocks" class="inp"><option value="alpaca">Alpaca</option><option value="robinhood">Robinhood</option><option value="schwab">Schwab</option><option value="fidelity">Fidelity</option><option value="ibkr_lite">IBKR Lite</option><option value="ibkr_pro">IBKR Pro</option><option value="webull">Webull</option><option value="zero_fee">No Fees</option></select></div>
+        </div>
+        <!-- Legacy single selector for backward compat -->
+        <select id="fee-sel" class="inp" style="display:none"><option value="coinbase_adv">Coinbase Advanced</option></select>
       </div>
       <hr class="border-bd"/>
       <div class="text-t2 text-xs font-bold uppercase mb-1">Risk Controls</div>
@@ -999,7 +1004,15 @@ var tileDays={main:7,c2:7,c3:7};
 var tileAsset={main:'bitcoin',c2:'ethereum',c3:'solana'};
 
 // ===================== API QUEUE =====================
-function qApi(url){return new Promise(function(ok,no){apiQ.push({u:url,ok:ok,no:no});if(!apiOn)runQ()});}
+var _apiInFlight={};
+function qApi(url){
+  // Dedup: if same URL is already in-flight, chain onto existing promise
+  if(_apiInFlight[url])return _apiInFlight[url];
+  var p=new Promise(function(ok,no){apiQ.push({u:url,ok:ok,no:no});if(!apiOn)runQ()});
+  _apiInFlight[url]=p;
+  p.finally(function(){delete _apiInFlight[url]});
+  return p;
+}
 function runQ(){if(!apiQ.length){apiOn=false;return;}apiOn=true;var i=apiQ.shift();
   fetch(i.u).then(function(r){return r.json()}).then(function(d){i.ok(d);setTimeout(runQ,2200)}).catch(function(e){i.no(e);setTimeout(runQ,2200)});}
 
@@ -1882,7 +1895,7 @@ function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)re
 
 // ===================== TRADING ENGINE =====================
 function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
-  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var feeProfile=getFeeProfile(id);
   var cost=calculateTradeCost(amt,feeProfile,'buy',.03);var eff=amt-cost.total;if(eff<=0)return null;
   var qty=eff/pr;account.cash-=amt;account.fees+=cost.total;
   var ex=account.positions.find(function(p){return p.id===id});
@@ -1899,7 +1912,7 @@ function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||am
 
 window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
   var pr=prOf(id);if(!pr)return null;if(!qty||qty>=pos.qty)qty=pos.qty;
-  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var feeProfile=getFeeProfile(id);
   var gross=qty*pr;var cost=calculateTradeCost(gross,feeProfile,'sell',.03);var net=gross-cost.total;
   var invested=qty*pos.avgPrice;var pnl=net-invested;
   account.cash+=net;account.dayPnL+=pnl;bot.pnl+=pnl;account.fees+=cost.total;
@@ -3056,6 +3069,14 @@ function prOf(id){
   return 0;
 }
 function chOf(id){var p=prices[id];return p?(p.usd_24h_change||0):0}
+// Get fee profile based on asset market type
+function getFeeProfile(assetId){
+  // Check if asset is crypto or stock
+  var isCrypto=CRYPTO.find(function(c){return c.id===assetId})||
+    (typeof wl!=='undefined'&&wl.find(function(w){return w.id===assetId&&w.mkt==='crypto'}));
+  if(isCrypto)return gv('fee-sel-crypto')||'coinbase_adv';
+  return gv('fee-sel-stocks')||'alpaca';
+}
 function fp(p){if(!p)return'0.00';if(p>=1e9)return(p/1e9).toFixed(2)+'B';if(p>=1e6)return(p/1e6).toFixed(2)+'M';if(p>=1000)return p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return p.toFixed(2);return p.toFixed(4)}
 function setText(id,t){var el=document.getElementById(id);if(el)el.textContent=t}
 function setPr(eid,aid){var el=document.getElementById(eid);if(!el)return;var p=prOf(aid),c=chOf(aid);
@@ -3545,7 +3566,7 @@ function saveState(){
     localStorage.setItem('ct_rsize',gv('r-size'));localStorage.setItem('ct_rsl',gv('r-sl'));
     localStorage.setItem('ct_rtp',gv('r-tp'));localStorage.setItem('ct_rmax',gv('r-max'));
     localStorage.setItem('ct_rdll',gv('r-dll'));localStorage.setItem('ct_rtrail',gv('r-trail'));
-    localStorage.setItem('ct_strat',gv('strat-sel'));localStorage.setItem('ct_fee',gv('fee-sel'));
+    localStorage.setItem('ct_strat',gv('strat-sel'));localStorage.setItem('ct_fee_crypto',gv('fee-sel-crypto'));localStorage.setItem('ct_fee_stocks',gv('fee-sel-stocks'));
     localStorage.setItem('ct_pos_sizing',_positionSizingMode);
   }catch(e){}
 }
@@ -3563,17 +3584,30 @@ function loadState(){
     }
     var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
     var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
-    var sf=localStorage.getItem('ct_fee');if(sf){var el=document.getElementById('fee-sel');if(el)el.value=sf;}
+    var sfc=localStorage.getItem('ct_fee_crypto');if(sfc){var el=document.getElementById('fee-sel-crypto');if(el)el.value=sfc;}
+    var sfs=localStorage.getItem('ct_fee_stocks');if(sfs){var el=document.getElementById('fee-sel-stocks');if(el)el.value=sfs;}
     // Risk controls
     var rv=function(k,id){var v=localStorage.getItem(k);if(v){var el=document.getElementById(id);if(el)el.value=v;}};
     rv('ct_rsize','r-size');rv('ct_rsl','r-sl');rv('ct_rtp','r-tp');rv('ct_rmax','r-max');rv('ct_rdll','r-dll');rv('ct_rtrail','r-trail');
     var sps=localStorage.getItem('ct_pos_sizing');if(sps){_positionSizingMode=sps;var pse=document.getElementById('pos-sizing-mode');if(pse)pse.value=sps;}
   }catch(e){}
 }
-// Auto-save every 10 seconds
-setInterval(saveState,10000);
+// Auto-save every 10 seconds (localStorage + Supabase)
+setInterval(function(){
+  saveState();
+  // Sync bot state to Supabase every 30 seconds if logged in
+  if(SB.user&&Date.now()-(window._lastSBSync||0)>30000){
+    window._lastSBSync=Date.now();
+    SB.saveSettings().catch(function(){});
+    SB.updateCash(account.cash).catch(function(){});
+    SB.savePositions(account.positions).catch(function(){});
+  }
+},10000);
 // Save on page unload
-window.addEventListener('beforeunload',saveState);
+window.addEventListener('beforeunload',function(){
+  saveState();
+  if(SB.user){try{SB.saveSettings();SB.updateCash(account.cash);SB.savePositions(account.positions);}catch(e){}}
+});
 
 // ===================== KEYBOARD SHORTCUTS (Task 4c) =====================
 document.addEventListener('keydown',function(e){
@@ -5389,7 +5423,8 @@ setTimeout(function(){fetchMarketOverview();},3500);
 setInterval(function(){renderNewsFeed();},120000); // Refresh news every 2 min
 setInterval(function(){fetchMarketOverview();renderTrending();},300000); // Refresh market overview every 5 min
 window.addEventListener('resize',function(){setTimeout(resizeCharts,200)});
-setInterval(function(){if(mkt==='crypto'){cgPr().then(function(p){Object.assign(prices,p);ConnGuard.onPriceUpdate();updateUI();updateHdr()}).catch(function(){ConnGuard.onAPIFailure()})}},60000);
+// CoinGecko price polling removed — Finnhub handles all real-time prices now
+// CoinGecko only used for OHLC chart data via cgOHLC()
 
 // Batch 9: Init watchlist heatmap view
 (function(){

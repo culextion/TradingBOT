@@ -2,8 +2,9 @@
 
 var Simulator = {
   // Run a strategy backtest on historical data with fee profile
-  backtest: function(strategy, data, feeProfile, riskConfig, startingCapital) {
+  backtest: function(strategy, data, feeProfile, riskConfig, startingCapital, assetVolatility) {
     startingCapital = startingCapital || 100000;
+    assetVolatility = assetVolatility || 0.03; // default 3% daily volatility
     var cash = startingCapital, positions = [], trades = [], equity = [startingCapital];
     var peak = startingCapital, maxDD = 0, dayPnL = 0;
     var posSize = riskConfig.maxPositionPct / 100;
@@ -21,7 +22,7 @@ var Simulator = {
         var pnlPct = (bar.close - pos.avgPrice) / pos.avgPrice;
         if (pnlPct <= -stopLoss || pnlPct >= takeProfit) {
           var proceeds = pos.qty * bar.close;
-          var cost = calculateTradeCost(proceeds, feeProfile, 'sell', 0.02);
+          var cost = calculateTradeCost(proceeds, feeProfile, 'sell', assetVolatility || 0.03);
           proceeds -= cost.total;
           var pnl = proceeds - (pos.qty * pos.avgPrice);
           cash += proceeds;
@@ -36,7 +37,7 @@ var Simulator = {
         var buyAmount = portfolioValue * posSize;
         if (buyAmount > cash) buyAmount = cash;
         if (buyAmount > 10) {
-          var cost = calculateTradeCost(buyAmount, feeProfile, 'buy', 0.02);
+          var cost = calculateTradeCost(buyAmount, feeProfile, 'buy', assetVolatility || 0.03);
           var effectiveAmount = buyAmount - cost.total;
           var qty = effectiveAmount / bar.close;
           cash -= buyAmount;
@@ -46,7 +47,7 @@ var Simulator = {
       } else if (signal === 'SELL') {
         positions.slice().forEach(function(pos) {
           var proceeds = pos.qty * bar.close;
-          var cost = calculateTradeCost(proceeds, feeProfile, 'sell', 0.02);
+          var cost = calculateTradeCost(proceeds, feeProfile, 'sell', assetVolatility || 0.03);
           proceeds -= cost.total;
           var pnl = proceeds - (pos.qty * pos.avgPrice);
           cash += proceeds;
@@ -68,7 +69,7 @@ var Simulator = {
     var finalPrice = data[data.length - 1].close;
     positions.forEach(function(pos) {
       var proceeds = pos.qty * finalPrice;
-      var cost = calculateTradeCost(proceeds, feeProfile, 'sell', 0.02);
+      var cost = calculateTradeCost(proceeds, feeProfile, 'sell', assetVolatility || 0.03);
       proceeds -= cost.total;
       var pnl = proceeds - (pos.qty * pos.avgPrice);
       cash += proceeds;

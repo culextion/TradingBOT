@@ -173,6 +173,29 @@ var SB = {
       if (data.strat_weights_json && typeof bot !== 'undefined') {
         try { var sw = JSON.parse(data.strat_weights_json); if (sw) Object.assign(bot.stratWeights, sw); } catch(e) {}
       }
+      // Restore bot running state from Supabase (cross-device sync)
+      if (data.bot_state_json && typeof bot !== 'undefined') {
+        try {
+          var bs = JSON.parse(data.bot_state_json);
+          if (bs) {
+            bot.strat = bs.strat || bot.strat;
+            bot.pnl = bs.pnl || 0;
+            bot.trades = bs.trades || 0;
+            bot.consecutiveLosses = bs.consecutiveLosses || 0;
+            if (bs.cooldowns) bot.cooldowns = bs.cooldowns;
+            // Set fee profiles per market
+            if (bs.fee_profile_crypto) { var fc = document.getElementById('fee-sel-crypto'); if (fc) fc.value = bs.fee_profile_crypto; }
+            if (bs.fee_profile_stocks) { var fs = document.getElementById('fee-sel-stocks'); if (fs) fs.value = bs.fee_profile_stocks; }
+            // Update strategy selector
+            var stratSel = document.getElementById('strat-sel'); if (stratSel && bs.strat) stratSel.value = bs.strat;
+            // Auto-restart bot if it was running on another device
+            if (bs.on && !bot.on) {
+              console.log('Bot was running on another device — restarting...');
+              setTimeout(function() { if (typeof startBot === 'function') startBot(); }, 3000);
+            }
+          }
+        } catch(e) { console.error('Error restoring bot state:', e); }
+      }
     }
   },
 
@@ -193,6 +216,12 @@ var SB = {
       },
       updated_at: new Date().toISOString(),
       strat_weights_json: typeof bot !== 'undefined' ? JSON.stringify(bot.stratWeights) : null,
+      bot_state_json: typeof bot !== 'undefined' ? JSON.stringify({
+        on: bot.on, strat: bot.strat, pnl: bot.pnl, trades: bot.trades,
+        consecutiveLosses: bot.consecutiveLosses, cooldowns: bot.cooldowns,
+        fee_profile_crypto: typeof gv === 'function' ? gv('fee-sel-crypto') || gv('fee-sel') : 'coinbase_adv',
+        fee_profile_stocks: typeof gv === 'function' ? gv('fee-sel-stocks') || gv('fee-sel') : 'alpaca',
+      }) : null,
     };
     await this.client.from('user_settings').upsert(settings, { onConflict: 'user_id' });
   },
