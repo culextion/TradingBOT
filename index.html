@@ -25,6 +25,7 @@ body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui
 .ticker-news{color:var(--ylw);font-weight:700;padding:0 12px;display:inline-flex;align-items:center;gap:4px}
 .panel{background:var(--s1);border:1px solid var(--bd);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .panel:hover{border-color:var(--hover-bd)}
+[id^="page-"]{transition:opacity .2s ease}[id^="page-"].page-enter{opacity:0}[id^="page-"].page-active{opacity:1}
 .ph{display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--s2);border-bottom:1px solid var(--bd);min-height:28px;flex-shrink:0}
 .ph span,.ph .title{font-size:var(--fs-sm);font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t2)}
 .pb{flex:1;overflow:auto;position:relative;min-height:0}
@@ -1014,7 +1015,7 @@ function qApi(url){
   return p;
 }
 function runQ(){if(!apiQ.length){apiOn=false;return;}apiOn=true;var i=apiQ.shift();
-  fetch(i.u).then(function(r){return r.json()}).then(function(d){i.ok(d);setTimeout(runQ,2200)}).catch(function(e){i.no(e);setTimeout(runQ,2200)});}
+  fetch(i.u).then(function(r){if(!r.ok){console.warn('[API] '+r.status+' '+r.statusText+': '+i.u.split('?')[0]);throw new Error('HTTP '+r.status)}return r.json()}).then(function(d){i.ok(d);setTimeout(runQ,2200)}).catch(function(e){console.error('[API] Failed: '+i.u.split('?')[0]+' — '+e.message);i.no(e);setTimeout(runQ,2200)});}
 
 function cgPr(){var ids=(mkt==='crypto'?getWL():[]).map(function(a){return a.id}).join(',');
   if(!ids)return Promise.resolve({});
@@ -1305,32 +1306,46 @@ function resizeCharts(){Object.keys(chrt).forEach(function(k){var el=document.ge
 // ===================== TILE LOADING =====================
 function loadTile(key,assetId,days){
   var cid='c-'+key;tileAsset[key]=assetId;tileDays[key]=days;
-  var el=document.getElementById(cid);if(el)el.innerHTML='<div class="flex items-center justify-center h-full"><div class="w-5 h-5 border-2 border-bd border-t-blu rounded-full spin"></div></div>';
+  var el=document.getElementById(cid);
   var a=findA(assetId);if(a)setText('t-'+key,a.sym+'/USD');
+  setPr('pr-'+key,assetId);
 
   // For very short timeframes (< 1 day), use live accumulated candles if available
   if(days<1&&liveCandles[assetId]&&liveCandles[assetId].length>3){
     var cutoff=Math.floor(Date.now()/1000)-(days*86400);
     var filtered=liveCandles[assetId].filter(function(c){return c.time>=cutoff});
-    if(filtered.length>3){loadCh(cid,filtered,key);setPr('pr-'+key,assetId);return;}
+    if(filtered.length>3){loadCh(cid,filtered,key);return;}
+  }
+
+  // Show cached data instantly while fetching fresh data
+  var cachedData=ohlc[assetId]||stkData[assetId];
+  if(cachedData&&cachedData.length>3){
+    loadCh(cid,cachedData,key); // render cached chart immediately
+  } else {
+    if(el)el.innerHTML='<div class="flex items-center justify-center h-full"><div class="w-5 h-5 border-2 border-bd border-t-blu rounded-full spin"></div></div>';
   }
 
   if(mkt==='crypto'){
-    // CoinGecko: days<1 gives 5-min candles, 1-90 gives hourly, 90+ gives daily
     var cgDays=Math.max(1,Math.ceil(days));
     cgOHLC(assetId,cgDays).then(function(d){
       ohlc[assetId]=d;
-      // For sub-day views, filter to just the requested window
-      if(days<7){
-        var cutoff=Math.floor(Date.now()/1000)-(days*86400);
-        d=d.filter(function(c){return c.time>=cutoff});
-      }
+      if(days<7){var cutoff=Math.floor(Date.now()/1000)-(days*86400);d=d.filter(function(c){return c.time>=cutoff});}
       loadCh(cid,d,key);setPr('pr-'+key,assetId);
-    }).catch(function(){if(el)el.innerHTML='<div class="flex items-center justify-center h-full text-red text-xs">Failed — retrying...</div>';setTimeout(function(){loadTile(key,assetId,days)},5000);});
+    }).catch(function(err){
+      console.warn('[Chart] Failed to load '+assetId+': '+err.message);
+      // If we already rendered cached data, just keep it — don't show error
+      if(!cachedData||cachedData.length<3){
+        if(el)el.innerHTML='<div class="flex items-center justify-center h-full text-ylw text-xs">Using cached data — refresh failed</div>';
+      }
+      // Retry with exponential backoff
+      var retryDelay=Math.min(30000,5000*Math.pow(1.5,(window['_retry_'+key]||0)));
+      window['_retry_'+key]=(window['_retry_'+key]||0)+1;
+      if(window['_retry_'+key]<5)setTimeout(function(){loadTile(key,assetId,days)},retryDelay);
+    });
   }else{
-    var bars=days<1?Math.max(12,Math.round(days*288)):dToB(days); // 288 = 5min bars per day
+    var bars=days<1?Math.max(12,Math.round(days*288)):dToB(days);
     if(a&&a.base){stkData[assetId]=genStk(a,bars);}
-    loadCh(cid,stkData[assetId],key);setPr('pr-'+key,assetId);
+    loadCh(cid,stkData[assetId],key);
   }
 }
 
@@ -3240,7 +3255,9 @@ window.showSyncStatus=function(msg){
 };
 
 window.showPage=function(p,btn){
-  ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(el)el.style.display=id===p?'':'none'});
+  ['dashboard','bot','analysis','settings'].forEach(function(id){var el=document.getElementById('page-'+id);if(!el)return;
+    if(id===p){el.style.display='';el.classList.add('page-enter');requestAnimationFrame(function(){el.classList.remove('page-enter');el.classList.add('page-active')});}
+    else{el.style.display='none';el.classList.remove('page-active');}});
   document.querySelectorAll('.nav-tab').forEach(function(b){b.classList.remove('on')});if(btn)btn.classList.add('on');
   if(p==='dashboard'){setTimeout(resizeCharts,200);renderTrending();renderNewsFeed();}
   if(p==='bot'){onStratChange();updatePos();updateTradeLog();updateNextMoves();updateBotPerf();updateDcaTargets();mtPopulate();renderAllocation();renderAssetPnL();renderKeyLevels();renderAlerts();populateAlertAssets();populateRebalAssets();renderRebalance();
@@ -3609,29 +3626,59 @@ window.addEventListener('beforeunload',function(){
   if(SB.user){try{SB.saveSettings();SB.updateCash(account.cash);SB.savePositions(account.positions);}catch(e){}}
 });
 
-// ===================== KEYBOARD SHORTCUTS (Task 4c) =====================
+// ===================== KEYBOARD SHORTCUTS =====================
+var _shortcutHelpVisible=false;
 document.addEventListener('keydown',function(e){
-  // Don't trigger shortcuts when typing in input fields
   var tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
-  // B = Open buy form / focus amount input
-  if(e.key==='b'||e.key==='B'){
-    e.preventDefault();
-    // Navigate to Bot page if not already there
-    var botPage=document.getElementById('page-bot');
-    if(botPage&&botPage.style.display==='none'){
-      document.querySelectorAll('.nav-tab')[1].click();
-    }
-    setTimeout(function(){
-      var inp=document.getElementById('mt-amount');
-      if(inp){inp.focus();inp.select();}
-    },100);
-  }
-  // Escape = Close modals/overlays
-  if(e.key==='Escape'){
+
+  var key=e.key.toLowerCase();
+  // Navigation
+  if(key==='1'){e.preventDefault();document.querySelectorAll('.nav-tab')[0].click();return;}
+  if(key==='2'){e.preventDefault();document.querySelectorAll('.nav-tab')[1].click();return;}
+  if(key==='3'){e.preventDefault();document.querySelectorAll('.nav-tab')[2].click();return;}
+  if(key==='s'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();showPage('settings',null);return;}
+  // Actions
+  if(key==='b'){e.preventDefault();document.querySelectorAll('.nav-tab')[1].click();setTimeout(function(){var inp=document.getElementById('mt-amount');if(inp){inp.focus();inp.select();}},150);return;}
+  if(key==='/'){e.preventDefault();var si=document.getElementById('search');if(si){si.focus();si.select();}return;}
+  if(key==='t'){e.preventDefault();if(typeof toggleTheme==='function')toggleTheme();return;}
+  if(key==='escape'){
+    if(_shortcutHelpVisible){hideShortcutHelp();return;}
     var authOv=document.getElementById('auth-overlay');
     if(authOv&&authOv.style.display!=='none'){authOv.style.display='none';return;}
   }
+  // Help overlay
+  if(key==='?'||key==='h'){e.preventDefault();toggleShortcutHelp();return;}
+  // Bot controls
+  if(key===' '&&e.shiftKey){e.preventDefault();if(bot.on)stopBot();else startBot();return;}
+  if(key==='k'&&e.shiftKey){e.preventDefault();killAll();return;}
 });
+
+function toggleShortcutHelp(){_shortcutHelpVisible?hideShortcutHelp():showShortcutHelp();}
+function showShortcutHelp(){
+  _shortcutHelpVisible=true;
+  var ov=document.createElement('div');ov.id='shortcut-help';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:flex;align-items:center;justify-content:center';
+  ov.onclick=hideShortcutHelp;
+  var sc=function(k,d){return'<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">'+d+'</span><kbd style="background:var(--s3);border:1px solid var(--bd);border-radius:3px;padding:1px 6px;font-size:11px;color:var(--t1);font-family:inherit;min-width:24px;text-align:center">'+k+'</kbd></div>'};
+  ov.innerHTML='<div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:20px;width:340px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-weight:700;font-size:14px">Keyboard Shortcuts</span><button onclick="hideShortcutHelp()" style="background:none;border:none;color:var(--t2);font-size:18px;cursor:pointer">&times;</button></div>'+
+    '<div style="font-size:12px">'+
+    '<div style="color:var(--blu);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:8px 0 4px">Navigation</div>'+
+    sc('1','Dashboard')+sc('2','Trading Bot')+sc('3','Market Analysis')+sc('S','Settings')+
+    '<div style="color:var(--blu);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px">Actions</div>'+
+    sc('B','Buy — open trade form')+sc('/','Search assets')+sc('T','Toggle dark/light theme')+
+    '<div style="color:var(--blu);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px">Bot</div>'+
+    sc('Shift+Space','Start / Stop bot')+sc('Shift+K','Kill switch — close all positions')+
+    '<div style="color:var(--blu);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px">Other</div>'+
+    sc('?','Show this help')+sc('Esc','Close modal / overlay')+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+function hideShortcutHelp(){
+  _shortcutHelpVisible=false;
+  var ov=document.getElementById('shortcut-help');if(ov)ov.remove();
+}
+window.hideShortcutHelp=hideShortcutHelp;
 
 // ===================== SUPPORT/RESISTANCE (Batch 3 Task 1) =====================
 var assetLevels={}; // {assetId: {support:[{price,strength}], resistance:[{price,strength}]}}
