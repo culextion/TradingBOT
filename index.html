@@ -996,7 +996,7 @@ var wl=[];// custom watchlist
 var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
 var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
   cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
-  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0}, // Task 3b + Batch 3 + Batch 8
+  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0,vwap:1.0,divergence:1.0},
   consecutiveLosses:0,                                   // Task 3d
   pausedUntil:0,                                         // Task 3d
   tickCount:0,                                           // Tick counter for summary logging
@@ -1779,6 +1779,52 @@ function analyzeMarket(){
       var recentVol=d[d.length-1].volume||0;
       var avgVol=d.slice(-24).reduce(function(s,x){return s+(x.volume||0)},0)/24;
       if(recentVol>avgVol*2&&ch>0)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Volume spike '+((recentVol/avgVol).toFixed(1))+'x avg — strong buying pressure',conf:65,strat:'volume'});
+    }
+
+    // VWAP — Volume Weighted Average Price
+    if(d.length>=20){
+      var vwapSum=0,volSum=0;
+      for(var vi=Math.max(0,d.length-20);vi<d.length;vi++){
+        var typical=(d[vi].high||d[vi].close)+(d[vi].low||d[vi].close)+d[vi].close;typical/=3;
+        var vol=d[vi].volume||1;vwapSum+=typical*vol;volSum+=vol;
+      }
+      var vwap=volSum>0?vwapSum/volSum:pr;
+      var vwapDist=((pr-vwap)/vwap)*100;
+      // Price crossing above VWAP = bullish
+      if(d.length>=2){
+        var prevPr=d[d.length-2].close;
+        if(prevPr<vwap&&pr>vwap&&!hasPos)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Price crossed above VWAP ($'+fp(vwap)+') — bullish breakout',conf:71,strat:'vwap'});
+        if(prevPr>vwap&&pr<vwap&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Price crossed below VWAP ($'+fp(vwap)+') — bearish breakdown',conf:69,strat:'vwap'});
+      }
+      // Extreme distance from VWAP = mean reversion
+      if(vwapDist<-3&&!hasPos)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Price '+vwapDist.toFixed(1)+'% below VWAP — mean reversion expected',conf:67,strat:'vwap'});
+      if(vwapDist>3&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Price +'+vwapDist.toFixed(1)+'% above VWAP — extended, take profit',conf:65,strat:'vwap'});
+    }
+
+    // Momentum Divergence — RSI vs Price
+    if(d.length>=30){
+      // Check last 20 bars for divergence
+      var priceHigh=-Infinity,priceLow=Infinity,rsiAtHigh=0,rsiAtLow=0;
+      var recentPriceHigh=-Infinity,recentRsiAtHigh=0;
+      var recentPriceLow=Infinity,recentRsiAtLow=0;
+      // First half (bars -30 to -15)
+      for(var di=d.length-30;di<d.length-15;di++){
+        if(d[di].close>priceHigh){priceHigh=d[di].close;rsiAtHigh=cRSIat(d,di);}
+        if(d[di].close<priceLow){priceLow=d[di].close;rsiAtLow=cRSIat(d,di);}
+      }
+      // Second half (bars -15 to now)
+      for(var di=d.length-15;di<d.length;di++){
+        if(d[di].close>recentPriceHigh){recentPriceHigh=d[di].close;recentRsiAtHigh=cRSIat(d,di);}
+        if(d[di].close<recentPriceLow){recentPriceLow=d[di].close;recentRsiAtLow=cRSIat(d,di);}
+      }
+      // Bearish divergence: price makes higher high but RSI makes lower high
+      if(recentPriceHigh>priceHigh&&recentRsiAtHigh<rsiAtHigh-5&&hasPos){
+        moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Bearish divergence — price new high but RSI declining ('+recentRsiAtHigh.toFixed(0)+' vs '+rsiAtHigh.toFixed(0)+')',conf:73,strat:'divergence'});
+      }
+      // Bullish divergence: price makes lower low but RSI makes higher low
+      if(recentPriceLow<priceLow&&recentRsiAtLow>rsiAtLow+5&&!hasPos){
+        moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Bullish divergence — price new low but RSI rising ('+recentRsiAtLow.toFixed(0)+' vs '+rsiAtLow.toFixed(0)+')',conf:75,strat:'divergence'});
+      }
     }
 
     // ADX trend strength signals (Batch 8 Task 1)
@@ -3102,6 +3148,8 @@ function setPr(eid,aid){var el=document.getElementById(eid);if(!el)return;var p=
 function gv(id){var el=document.getElementById(id);return el?el.value:''}
 function mr(l,v){return'<div class="metric"><span class="text-t2">'+l+'</span><span class="font-bold">'+v+'</span></div>'}
 function cRSI(d){var p=14,g=[],lo=[];for(var i=1;i<d.length;i++){var c=d[i].close-d[i-1].close;g.push(c>0?c:0);lo.push(c<0?-c:0)}if(g.length<p)return 50;var ag=0,al=0;for(var i=g.length-p;i<g.length;i++){ag+=g[i];al+=lo[i]}ag/=p;al/=p;return 100-100/(1+(al===0?100:ag/al))}
+// RSI at a specific bar index (for divergence detection)
+function cRSIat(d,endIdx){var p=14;if(endIdx<p)return 50;var ag=0,al=0;for(var i=endIdx-p+1;i<=endIdx;i++){var c=d[i].close-d[i-1].close;if(c>0)ag+=c;else al-=c;}ag/=p;al/=p;return 100-100/(1+(al===0?100:ag/al))}
 function sma(d,p){var s=0;for(var i=d.length-p;i<d.length;i++)s+=d[i].close;return s/p}
 // ===== ADX (Average Directional Index) — Batch 8 Task 1 =====
 function calcADX(d,period){
