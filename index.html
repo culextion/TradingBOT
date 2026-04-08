@@ -1341,7 +1341,14 @@ function genStk(a,bars){bars=bars||168;var d=[],p=a.base,s=hash(a.sym);
   for(var i=0;i<bars;i++){var t=st+i*3600;var ret=(.0001-.5*a.vol*a.vol)/24+a.vol*Math.sqrt(1/24)*rn();
     var o=p;p*=Math.exp(ret);var c=p;var rng=Math.abs(c-o)+p*a.vol*.02*Math.abs(rn());
     var h=Math.max(o,c)+rng*rnd()*.5,l=Math.min(o,c)-rng*rnd()*.5;
-    d.push({time:t,open:+o.toFixed(2),high:+h.toFixed(2),low:+l.toFixed(2),close:+c.toFixed(2)});}return d;}
+    d.push({time:t,open:+o.toFixed(2),high:+h.toFixed(2),low:+l.toFixed(2),close:+c.toFixed(2)});}
+  // Anchor to real price: scale all candles so the last one matches the current live price
+  var realPrice=prices[a.id]&&prices[a.id].usd?prices[a.id].usd:a.base;
+  if(d.length&&realPrice>0){
+    var lastClose=d[d.length-1].close;var ratio=realPrice/lastClose;
+    if(Math.abs(ratio-1)>0.001){d.forEach(function(c){c.open=+(c.open*ratio).toFixed(2);c.high=+(c.high*ratio).toFixed(2);c.low=+(c.low*ratio).toFixed(2);c.close=+(c.close*ratio).toFixed(2);});}
+  }
+  return d;}
 function hash(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))&0x7fffffff;return h||1}
 function dToB(d){return d<=7?168:d<=30?720:d<=90?2160:8760}
 
