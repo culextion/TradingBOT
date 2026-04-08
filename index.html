@@ -2002,30 +2002,65 @@ function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p
 // Fetch live prices for ALL held positions (cross-market)
 function fetchHeldPositionPrices(){
   if(!account.positions.length)return;
-  var currentWLIds={};getWL().forEach(function(a){currentWLIds[a.id]=true;});
 
-  // Find held crypto positions NOT in current watchlist (need separate fetch)
-  var cryptoIds=account.positions.filter(function(p){
-    return !currentWLIds[p.id]; // skip assets already fetched by main refresh
-  }).filter(function(p){
-    return CRYPTO.find(function(c){return c.id===p.id})||['bitcoin','ethereum','solana','binancecoin','ripple','cardano','dogecoin','polkadot','chainlink','avalanche-2','polygon'].indexOf(p.id)>-1;
-  }).map(function(p){return p.id});
-  if(cryptoIds.length){
-    fetch('https://api.coingecko.com/api/v3/simple/price?ids='+cryptoIds.join(',')+'&vs_currencies=usd&include_24hr_change=true')
-      .then(function(r){return r.json()})
-      .then(function(d){
-        for(var id in d){prices[id]={usd:d[id].usd,usd_24h_change:d[id].usd_24h_change||0};}
-        updateUI();updateHdr();
-      }).catch(function(){});
-  }
-  // Find held stock positions NOT in current watchlist
-  var stockPos=account.positions.filter(function(p){
-    return !currentWLIds[p.id];
-  }).filter(function(p){
-    return STOCKS.find(function(s){return s.id===p.id})||(typeof ALL_STOCKS!=='undefined'&&ALL_STOCKS.find(function(s){return s.id===p.id}));
+  // Fetch prices for ALL held positions regardless of market tab or watchlist
+  // This ensures cross-market positions always show accurate P&L
+
+  // Crypto positions — fetch from Finnhub crypto key
+  var cryptoPos=account.positions.filter(function(p){
+    return CRYPTO.find(function(c){return c.id===p.id})||
+      (wl.find(function(w){return w.id===p.id&&w.mkt==='crypto'}));
   });
-  if(stockPos.length&&typeof fhAllQuotes==='function'){
-    fhAllQuotes(stockPos).then(function(){updateUI();updateHdr();}).catch(function(){});
+  if(cryptoPos.length){
+    // Use Finnhub for real-time crypto prices
+    var cryptoQuotes=cryptoPos.map(function(p,i){
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          var sym='BINANCE:'+p.sym+'USDT';
+          fetch('https://finnhub.io/api/v1/quote?symbol='+sym+'&token='+FH_CRYPTO_KEY)
+            .then(function(r){return r.json()})
+            .then(function(q){
+              if(q&&q.c&&q.c>0){prices[p.id]={usd:q.c,usd_24h_change:q.dp||0,prevClose:q.pc};}
+              resolve();
+            }).catch(function(){resolve()});
+        },i*200);
+      });
+    });
+    Promise.all(cryptoQuotes).then(function(){updatePos();updateHdr();});
+  }
+
+  // Stock positions — fetch from Finnhub stock key
+  var stockPos=account.positions.filter(function(p){
+    return !CRYPTO.find(function(c){return c.id===p.id})&&
+      !(wl.find(function(w){return w.id===p.id&&w.mkt==='crypto'}));
+  });
+  if(stockPos.length){
+    var stockQuotes=stockPos.map(function(p,i){
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          fetch('https://finnhub.io/api/v1/quote?symbol='+p.sym+'&token='+FH_STOCK_KEY)
+            .then(function(r){return r.json()})
+            .then(function(q){
+              if(q&&q.c&&q.c>0){prices[p.id]={usd:q.c,usd_24h_change:q.dp||0,prevClose:q.pc};}
+              resolve();
+            }).catch(function(){resolve()});
+        },i*200);
+      });
+    });
+    Promise.all(stockQuotes).then(function(){updatePos();updateHdr();});
+  }
+
+  // Also subscribe stock positions to WebSocket if not already connected
+  if(stockPos.length&&fhStockWs&&fhStockWs.readyState===1){
+    stockPos.forEach(function(p){
+      try{fhStockWs.send(JSON.stringify({type:'subscribe',symbol:p.sym}));}catch(e){}
+    });
+  }
+  // Subscribe crypto positions to WebSocket
+  if(cryptoPos.length&&fhCryptoWs&&fhCryptoWs.readyState===1){
+    cryptoPos.forEach(function(p){
+      try{fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:'BINANCE:'+p.sym+'USDT'}));}catch(e){}
+    });
   }
 }
 
@@ -5668,7 +5703,9 @@ loadBotMarkets();
 initTicker();
 loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
-setTimeout(fetchHeldPositionPrices, 3000);
+// Fetch prices for ALL held positions (cross-market) on load and every 30s
+setTimeout(fetchHeldPositionPrices, 2000);
+setInterval(fetchHeldPositionPrices, 30000);
 updateDcaTargets();
 loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
 // Batch 6: Init pending orders, order assets, risk analytics, schedule, notif prefs
