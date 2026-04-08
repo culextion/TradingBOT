@@ -22,7 +22,7 @@ body{margin:0;background:var(--s0);color:var(--t1);font-family:'Inter',system-ui
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}.pulse{animation:pulse 2s infinite}
 .ticker-wrap{overflow:hidden;width:100%;height:100%;position:relative}
 .ticker-track{display:inline-flex;align-items:center;white-space:nowrap;height:100%;will-change:transform}
-.ticker-news{color:var(--ylw);font-weight:700;padding:0 12px;display:inline-flex;align-items:center;gap:4px}
+.ticker-news{color:var(--ylw);font-weight:700;padding:0 12px;display:inline-flex;align-items:center;gap:4px}.ticker-news a{color:var(--ylw);text-decoration:none;white-space:nowrap}.ticker-news a:hover{text-decoration:underline;color:var(--t1)}
 .panel{background:var(--s1);border:1px solid var(--bd);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .panel:hover{border-color:var(--hover-bd)}
 [id^="page-"]{transition:opacity .2s ease}[id^="page-"].page-enter{opacity:0}[id^="page-"].page-active{opacity:1}
@@ -419,6 +419,7 @@ select.inp{appearance:auto}
         <option value="confidence">Confidence-Scaled</option>
       </select>
       <div id="pos-sizing-info" class="text-t2" style="font-size:9px;line-height:1.4;margin-bottom:4px">Fixed: Uses the Position Size % setting above for every trade.</div>
+      <div id="fee-breakeven-info" class="text-ylw" style="font-size:9px;line-height:1.4;margin-bottom:4px;padding:3px 6px;background:var(--s2);border-radius:4px;border-left:2px solid var(--ylw)">Min gain to break even: calculating...</div>
       <hr class="border-bd"/>
       <div class="text-t2 text-xs font-bold uppercase mb-1">DCA Settings</div>
       <div id="dca-settings" class="grid grid-cols-2 gap-2">
@@ -1588,12 +1589,12 @@ function updateTicker(){
   var allAssets=getWL();
   var items=allAssets.map(function(a){var p=prOf(a.id),ch=chOf(a.id);if(!p)return'';var u=ch>=0;
     return'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 14px;flex-shrink:0"><span class="text-t2 font-bold">'+a.sym+'</span><span class="font-bold">$'+fp(p)+'</span><span class="'+(u?'text-grn':'text-red')+'">'+(u?'▲':'▼')+Math.abs(ch).toFixed(2)+'%</span></span>';}).filter(Boolean);
-  if(window._tickerNews&&_tickerNews.length){_tickerNews.forEach(function(n){items.push('<span class="ticker-news">\u26A1 '+n+'</span>')});}
+  if(window._tickerNews&&_tickerNews.length){_tickerNews.forEach(function(n){var title=typeof n==='string'?n:n.title;var url=typeof n==='object'&&n.url?n.url:'';if(url){items.push('<span class="ticker-news">\u26A1 <a href="'+url+'" target="_blank" rel="noopener">'+title+'</a></span>');}else{items.push('<span class="ticker-news">\u26A1 '+title+'</span>');}});}
   if(!items.length)return;
   var content=items.join(sep);
   // Build: one measured block + one clone. Use a hidden measurer to get exact width.
   var measurer=document.createElement('span');
-  measurer.style.cssText='display:inline-flex;align-items:center;flex-shrink:0;padding-right:80px;visibility:hidden;position:absolute';
+  measurer.style.cssText='display:inline-flex;align-items:center;flex-shrink:0;padding-right:40px;visibility:hidden;position:absolute';
   measurer.innerHTML=content;
   el.appendChild(measurer);
   var w=measurer.offsetWidth;
@@ -1601,7 +1602,7 @@ function updateTicker(){
   // Ensure we have enough copies to fill screen + overflow
   var screenW=window.innerWidth;
   var copies=Math.ceil(screenW/w)+2;
-  var block='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:80px">'+content+'</span>';
+  var block='<span style="display:inline-flex;align-items:center;flex-shrink:0;padding-right:40px">'+content+'</span>';
   var html='';for(var i=0;i<copies;i++)html+=block;
   el.innerHTML=html;
   tickerHalf=w;
@@ -1857,6 +1858,14 @@ function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)r
   if(!moves.length)el.innerHTML='<div class="text-t2 text-xs text-center py-2">No signals. Bot is monitoring...</div>';}
 
 // ===================== MARKET ANALYSIS =====================
+// Convert histData (asset_daily_stats from Supabase) to OHLC format for indicators
+function histDataToOHLC(hd){
+  if(!hd||!hd.length)return[];
+  return hd.map(function(r){
+    return{time:new Date(r.date).getTime()/1000,open:parseFloat(r.open_price||r.close_price),high:parseFloat(r.high_price||r.close_price),low:parseFloat(r.low_price||r.close_price),close:parseFloat(r.close_price),volume:parseFloat(r.volume||0)};
+  }).filter(function(c){return c.close>0&&!isNaN(c.close)});
+}
+
 function analyzeMarket(){
   var moves=[];
   var wla=getWL();
@@ -1872,8 +1881,15 @@ function analyzeMarket(){
   }
 
   wla.forEach(function(a){
-    // Use deeper accumulated history when available for better indicators
+    // Use deepest available data: asset_daily_stats > ohlcDeep (price_history) > ohlc (CoinGecko)
     var d=mkt==='crypto'?(ohlcDeep[a.id]&&ohlcDeep[a.id].length>(ohlc[a.id]?ohlc[a.id].length:0)?ohlcDeep[a.id]:ohlc[a.id]):stkData[a.id];
+    // Integrate asset_daily_stats (histData) for deeper SMA/RSI/Bollinger if available
+    if(mkt==='crypto'&&histData[a.id]&&histData[a.id].length>50){
+      var dailyOHLC=histDataToOHLC(histData[a.id]);
+      if(dailyOHLC.length>((d&&d.length)||0)){
+        d=dailyOHLC;
+      }
+    }
     if(!d||d.length<20)return;
     var rsi=cRSI(d),pr=d[d.length-1].close,ch=chOf(a.id);
     var s20=sma(d,20);
@@ -1883,7 +1899,8 @@ function analyzeMarket(){
     // RSI signals — deeper history gives more accurate RSI
     if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — strong bounce expected'+(d.length>200?' ('+d.length+' candles)':''),conf:80,strat:'meanrev'});
     else if(rsi<35)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold — mean reversion likely',conf:70,strat:'meanrev'});
-    if(rsi>75&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought — take profit',conf:78,strat:'meanrev'});
+    if(rsi>80&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' extremely overbought — take profit',conf:82,strat:'meanrev'});
+    else if(rsi>70&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought — caution',conf:62,strat:'meanrev'});
 
     // SMA trend signals — with deep history, also use SMA100/200
     if(pr>s20&&s20>s50&&ch>0.5)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Strong uptrend — price > SMA20 > SMA50, momentum +'+ch.toFixed(1)+'%',conf:72,strat:'momentum'});
@@ -2111,8 +2128,25 @@ function updateAnalysis(){var el=document.getElementById('c-analysis');if(!el)re
 }
 
 // ===================== TRADING ENGINE =====================
+// Calculate min gain % needed to cover round-trip fees for a given trade size
+function calcFeeBreakeven(amt,assetId){
+  var feeProfile=getFeeProfile(assetId);
+  var buyCost=calculateTradeCost(amt,feeProfile,'buy',.03);
+  var sellCost=calculateTradeCost(amt,feeProfile,'sell',.03);
+  var roundTripFees=buyCost.total+sellCost.total;
+  var breakevenPct=amt>0?(roundTripFees/amt)*100:0;
+  return{roundTripFees:roundTripFees,breakevenPct:breakevenPct,buyCost:buyCost.total,sellCost:sellCost.total};
+}
+
 function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
   var feeProfile=getFeeProfile(id);
+  // Pre-trade fee-to-profit check: ensure expected gain justifies round-trip fees
+  var feeCheck=calcFeeBreakeven(amt,id);
+  var tp=parseFloat(gv('r-tp')||10);
+  if(feeCheck.breakevenPct>tp*0.5){
+    blog('FEE WARNING: Round-trip fees ($'+fp(feeCheck.roundTripFees)+', '+feeCheck.breakevenPct.toFixed(1)+'%) consume >50% of TP target ('+tp+'%). Skipping buy of '+(findA(id)||{sym:id}).sym,'warning');
+    return null;
+  }
   var cost=calculateTradeCost(amt,feeProfile,'buy',.03);var eff=amt-cost.total;if(eff<=0)return null;
   var qty=eff/pr;account.cash-=amt;account.fees+=cost.total;
   var ex=account.positions.find(function(p){return p.id===id});
@@ -2139,7 +2173,22 @@ window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){
   var t={type:'SELL',id:id,sym:sym,qty:qty,price:pr,amount:net,gross:gross,invested:invested,pnl:pnl,fees:cost.total,
     feeDetail:{exchange:cost.fees,spread:cost.spread,slippage:cost.slippage,flat:cost.flat,profile:profName,feeRate:(FEE_PROFILES[feeProfile]||{}).maker||0,feeType:'maker'},
     time:blogFmtTime(new Date()),ts:Date.now(),reason:reason||null,notes:''};
+  // Classify sell type for detailed logging
+  var sellType='manual';
+  if(reason){
+    if(/stop loss/i.test(reason))sellType='stop-loss';
+    else if(/trailing stop|trail stop/i.test(reason))sellType='trailing-stop';
+    else if(/take profit/i.test(reason))sellType='take-profit';
+    else if(/signal sell|signal exec|bollinger|rsi|sma|vwap|ichimoku|divergence|bearish/i.test(reason))sellType='signal-based';
+    else if(/rebalance/i.test(reason))sellType='rebalance';
+    else if(/limit order/i.test(reason))sellType='limit-order';
+  }
+  t.sellType=sellType;
   account.trades.unshift(t);bot.trades++;
+  // Detailed sell log
+  var pnlPct=invested>0?((pnl/invested)*100):0;
+  var sellLogMsg='SELL '+sym+' — '+(reason||'Manual').substring(0,120)+'. P&L: '+(pnl>=0?'+':'-')+'$'+fp(Math.abs(pnl))+' ('+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%). Type: '+sellType+'. Fees: $'+fp(cost.total);
+  blog(sellLogMsg,'trade');
   // Toast notification (Task 4a)
   showToast('[SELL] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr)+' '+(pnl>=0?'+':'')+' $'+fp(Math.abs(pnl)),pnl>=0?'sell':'warn');
   // Task 3b: Update strategy weights based on trade outcome
@@ -2476,6 +2525,13 @@ function updateBotPerf(){
   setText('perf-dd',m.maxDrawdown?m.maxDrawdown.toFixed(1)+'%':'--');
   setText('perf-pf',m.profitFactor?m.profitFactor.toFixed(2):'--');
   setText('pf-cash','$'+fp(account.cash));
+  // Update fee breakeven display
+  var fbeEl=document.getElementById('fee-breakeven-info');
+  if(fbeEl){
+    var tradeSize=portVal()*(parseFloat(gv('r-size')||10)/100);
+    var fbe=calcFeeBreakeven(tradeSize,sel);
+    fbeEl.innerHTML='Min gain to break even: <strong>'+fbe.breakevenPct.toFixed(1)+'%</strong> ($'+fp(fbe.roundTripFees)+' round-trip on $'+fp(tradeSize)+' trade)';
+  }
 }
 
 function runBot(){if(!bot.on)return;
@@ -2547,6 +2603,81 @@ function runBot(){if(!bot.on)return;
       blog('TRAIL STOP: '+pos.sym+' — fell '+((Math.abs(trailPct)*100).toFixed(1))+'% from peak');sellA(pos.id,null,r);return;}
     if(pct<=-sl){var r='Stop loss triggered at '+((pct*100).toFixed(1))+'% (limit: -'+(sl*100).toFixed(0)+'%)';blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}
     else if(pct>=tp){var r='Take profit hit at +'+((pct*100).toFixed(1))+'% (target: +'+(tp*100).toFixed(0)+'%)';blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}});
+
+  // Signal-based sell logic — check sell signals from analyzeMarket for held positions
+  var _sellMoves=analyzeMarket().filter(function(m){return m.dir==='sell'});
+  if(_sellMoves.length){
+    var _minProfitPct=Math.min(2,tp*100)/100; // Min 2% or TP setting, whichever is lower
+    account.positions.slice().forEach(function(pos){
+      var pr=prOf(pos.id);if(!pr)return;
+      var pct=(pr-pos.avgPrice)/pos.avgPrice;
+      var pnlAmt=pos.qty*pr-pos.qty*pos.avgPrice;
+      // Get all sell signals for this position
+      var posSellSigs=_sellMoves.filter(function(m){return m.id===pos.id});
+      if(!posSellSigs.length)return;
+      var sigCount=posSellSigs.length;
+      var bestSig=posSellSigs.reduce(function(a,b){return a.conf>b.conf?a:b});
+      var sigReasons=posSellSigs.map(function(s){return s.strat+' ('+Math.round(s.conf)+'%)'}).join(', ');
+      // Get data for "let winners run" check
+      var dd=mkt==='crypto'?(ohlcDeep[pos.id]&&ohlcDeep[pos.id].length>(ohlc[pos.id]?ohlc[pos.id].length:0)?ohlcDeep[pos.id]:ohlc[pos.id]):stkData[pos.id];
+      var s20=(dd&&dd.length>=20)?sma(dd,20):0;
+      var rsi=(dd&&dd.length>=14)?cRSI(dd):50;
+      var prAboveSMA=s20>0&&pr>s20;
+      var isUptrend=prAboveSMA&&pct>0;
+
+      // Decision logic:
+      // 1) If position is profitable and trending up (price > SMA20), "let winners run"
+      //    Only sell if: RSI > 80 (extreme), OR 2+ strong signals agree (conf > 75%), OR price < SMA20
+      if(isUptrend){
+        // Extremely overbought — always consider selling
+        if(rsi>80&&sigCount>=1){
+          var r='SIGNAL SELL: '+sigReasons+'. RSI='+rsi.toFixed(0)+' extremely overbought. P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(1))+'% ($'+(pnlAmt>=0?'+':'')+fp(Math.abs(pnlAmt))+')';
+          blog('SIGNAL SELL: '+pos.sym+' — RSI '+rsi.toFixed(0)+' extreme overbought + '+sigCount+' signal(s). P&L: '+(pct>=0?'+':'-')+'$'+fp(Math.abs(pnlAmt))+' ('+(pct>=0?'+':'')+((pct*100).toFixed(1))+'%)','trade');
+          sellA(pos.id,null,r);return;
+        }
+        // Multiple strong signals agree (2+, conf > 75%) — sell even when trending up
+        var strongSigs=posSellSigs.filter(function(s){return s.conf>75});
+        if(strongSigs.length>=2&&pct>=_minProfitPct){
+          var r='SIGNAL SELL: '+sigCount+' signals ('+sigReasons+'). Strong multi-signal agreement while profitable. P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(1))+'% ($'+(pnlAmt>=0?'+':'')+fp(Math.abs(pnlAmt))+')';
+          blog('SIGNAL SELL: '+pos.sym+' — '+strongSigs.length+' strong signals agree. Letting winner exit at profit. P&L: '+(pct>=0?'+':'-')+'$'+fp(Math.abs(pnlAmt))+' ('+(pct>=0?'+':'')+((pct*100).toFixed(1))+'%)','trade');
+          sellA(pos.id,null,r);return;
+        }
+        // Single weak signal while trending up — DO NOT sell, log it
+        if(bot.tickCount%5===0)blog('HOLD: '+pos.sym+' — '+sigCount+' sell signal(s) ('+sigReasons+') but price > SMA20 and trending up. Letting winners run. P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(1))+'%','info');
+        return;
+      }
+
+      // 2) Position is profitable but NOT strongly trending — require min profit threshold + 2 signals or 1 high-conf signal
+      if(pct>0){
+        if(pct<_minProfitPct){
+          // Below min profit threshold — only sell if 2+ signals agree
+          if(sigCount>=2){
+            var r='SIGNAL SELL: '+sigCount+' signals agree ('+sigReasons+'). Gain below min threshold but multi-signal confirmed. P&L: +'+((pct*100).toFixed(1))+'% ($+'+fp(Math.abs(pnlAmt))+')';
+            blog('SIGNAL SELL: '+pos.sym+' — '+sigCount+' signals agree. P&L: +$'+fp(Math.abs(pnlAmt))+' (+'+((pct*100).toFixed(1))+'%)','trade');
+            sellA(pos.id,null,r);return;
+          }
+          // Single signal below min profit — skip
+          if(bot.tickCount%5===0)blog('HOLD: '+pos.sym+' — sell signal ('+bestSig.strat+' '+Math.round(bestSig.conf)+'%) but gain only +'+((pct*100).toFixed(1))+'% (need '+(((_minProfitPct)*100).toFixed(0))+'%+ or 2 signals)','info');
+          return;
+        }
+        // Above min profit threshold — sell on 2+ signals or high conf
+        if(sigCount>=2||(bestSig.conf>75)){
+          var r='SIGNAL SELL: '+sigReasons+'. P&L: +'+((pct*100).toFixed(1))+'% ($+'+fp(Math.abs(pnlAmt))+')';
+          blog('SIGNAL SELL: '+pos.sym+' — '+sigReasons+'. P&L: +$'+fp(Math.abs(pnlAmt))+' (+'+((pct*100).toFixed(1))+'%)','trade');
+          sellA(pos.id,null,r);return;
+        }
+        if(bot.tickCount%5===0)blog('HOLD: '+pos.sym+' — single sell signal ('+bestSig.strat+' '+Math.round(bestSig.conf)+'%) not strong enough. P&L: +'+((pct*100).toFixed(1))+'%','info');
+        return;
+      }
+
+      // 3) Position is at a loss — sell only if 2+ signals agree (don't panic-sell on single signal, stop-loss handles that)
+      if(sigCount>=2){
+        var r='SIGNAL SELL: '+sigCount+' bearish signals ('+sigReasons+') on losing position. P&L: '+((pct*100).toFixed(1))+'% ($'+fp(Math.abs(pnlAmt))+')';
+        blog('SIGNAL SELL: '+pos.sym+' — '+sigCount+' bearish signals on loss. P&L: -$'+fp(Math.abs(pnlAmt))+' ('+((pct*100).toFixed(1))+'%)','trade');
+        sellA(pos.id,null,r);
+      }
+    });
+  }
 
   trackEquity();updateBotPerf();
 
@@ -2785,6 +2916,22 @@ function generateAISummary(){
   // Batch 8: Position sizing info in summary
   var ks=calcKellySize(75);
   parts.push('Position sizing: <strong>'+_positionSizingMode+'</strong>'+(ks.kelly?' (Kelly f*='+ks.kelly+'%)':'')+' — next trade ~$'+fp(ks.size)+'.');
+
+  // Fee impact analysis
+  if(account.fees>0&&bot.pnl!==0){
+    var grossProfit=bot.pnl+account.fees; // gross = net + fees
+    var feePct=grossProfit>0?((account.fees/grossProfit)*100):0;
+    if(feePct>30){
+      parts.push('<span class="text-ylw">Fees consumed '+feePct.toFixed(0)+'% of gross profit ($'+fp(account.fees)+' in fees vs $'+fp(grossProfit)+' gross). Consider reducing trade frequency or using a lower-fee exchange.</span>');
+    }else if(account.fees>50){
+      parts.push('Total fees: <span class="text-ylw">$'+fp(account.fees)+'</span> ('+feePct.toFixed(0)+'% of gross profit).');
+    }
+  }
+  // Min breakeven info
+  var _feeBE=calcFeeBreakeven(ks.size,sel);
+  if(_feeBE.breakevenPct>0.5){
+    parts.push('Min gain to break even on next trade: <strong class="text-ylw">'+_feeBE.breakevenPct.toFixed(1)+'%</strong> ($'+fp(_feeBE.roundTripFees)+' round-trip fees).');
+  }
 
   el.innerHTML='<div class="text-t1" style="font-size:11px;line-height:1.6">'+parts.join(' ')+'</div>';
   if(timeEl)timeEl.textContent='Updated '+new Date().toLocaleTimeString();
@@ -3831,12 +3978,22 @@ blog=function(msg){_origBlog(msg);if(SB.user)SB.saveLog(msg,'info');};
 var _settingsSaveTO=null;
 function autoSaveSettings(){if(!SB.user)return;clearTimeout(_settingsSaveTO);_settingsSaveTO=setTimeout(function(){SB.saveSettings()},1500);}
 ['r-size','r-sl','r-tp','r-max','r-dll','r-trail','fee-sel'].forEach(function(id){
-  var el=document.getElementById(id);if(el)el.addEventListener('change',autoSaveSettings);
+  var el=document.getElementById(id);if(el)el.addEventListener('change',function(){autoSaveSettings();updateFeeBreakeven();});
 });
+['fee-sel-crypto','fee-sel-stocks'].forEach(function(id){
+  var el=document.getElementById(id);if(el)el.addEventListener('change',function(){autoSaveSettings();updateFeeBreakeven();});
+});
+function updateFeeBreakeven(){
+  var fbeEl=document.getElementById('fee-breakeven-info');if(!fbeEl)return;
+  var tradeSize=portVal()*(parseFloat(gv('r-size')||10)/100);
+  var fbe=calcFeeBreakeven(tradeSize,sel);
+  fbeEl.innerHTML='Min gain to break even: <strong>'+fbe.breakevenPct.toFixed(1)+'%</strong> ($'+fp(fbe.roundTripFees)+' round-trip on $'+fp(tradeSize)+' trade)';
+}
+setTimeout(updateFeeBreakeven,3000);
 
 // ===================== THEME =====================
 window._tickerNews=[];
-window.addTickerNews=function(msg){_tickerNews.unshift(msg);if(_tickerNews.length>3)_tickerNews.pop();updateTicker();};
+window.addTickerNews=function(msg,url){_tickerNews.unshift({title:msg,url:url||''});if(_tickerNews.length>3)_tickerNews.pop();updateTicker();};
 window.clearTickerNews=function(){_tickerNews=[];updateTicker();};
 
 window.toggleTheme=function(){
@@ -4644,7 +4801,7 @@ function renderNewsFeed(){
       var top3=news.slice(0,2);
       top3.forEach(function(n){
         var short=n.title.length>60?n.title.substring(0,57)+'...':n.title;
-        _tickerNews.push(short);
+        _tickerNews.push({title:short,url:n.url||''});
       });
       if(_tickerNews.length>3)_tickerNews.length=3;
     }
