@@ -1268,6 +1268,7 @@ function fhConnectStockWS(symbols){
   if(fhStockWs){try{fhStockWs.close()}catch(e){}}
   fhStockWs=new WebSocket('wss://ws.finnhub.io?token='+FH_STOCK_KEY);
   fhStockWs.onopen=function(){
+    window._wsStockRetries=0; // Reset backoff on successful connect
     symbols.forEach(function(sym){fhStockWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
     ConnGuard.wsStockAlive=true;ConnGuard.wsLastStockPing=Date.now();
     console.log('Stock WS connected:',symbols.length,'symbols');
@@ -1275,7 +1276,11 @@ function fhConnectStockWS(symbols){
   };
   fhStockWs.onmessage=function(e){ConnGuard.onWSMessage('stock');handleFhMessage(e.data,'stock')};
   fhStockWs.onerror=function(){ConnGuard.wsStockAlive=false};
-  fhStockWs.onclose=function(){ConnGuard.wsStockAlive=false;console.log('Stock WS closed, reconnecting in 2s...');setTimeout(function(){fhConnectStockWS(_lastStockSyms)},2000)};
+  fhStockWs.onclose=function(){ConnGuard.wsStockAlive=false;
+    var delay=Math.min(30000,2000*Math.pow(2,window._wsStockRetries||0));
+    window._wsStockRetries=(window._wsStockRetries||0)+1;
+    console.log('Stock WS closed, reconnecting in '+(delay/1000)+'s (attempt #'+window._wsStockRetries+')');
+    setTimeout(function(){fhConnectStockWS(_lastStockSyms)},delay);};
 }
 
 function fhConnectCryptoWS(symbols){
@@ -1283,6 +1288,7 @@ function fhConnectCryptoWS(symbols){
   if(fhCryptoWs){try{fhCryptoWs.close()}catch(e){}}
   fhCryptoWs=new WebSocket('wss://ws.finnhub.io?token='+FH_CRYPTO_KEY);
   fhCryptoWs.onopen=function(){
+    window._wsCryptoRetries=0; // Reset backoff on successful connect
     symbols.forEach(function(sym){fhCryptoWs.send(JSON.stringify({type:'subscribe',symbol:sym}))});
     ConnGuard.wsCryptoAlive=true;ConnGuard.wsLastCryptoPing=Date.now();
     console.log('Crypto WS connected:',symbols.length,'symbols');
@@ -1290,7 +1296,11 @@ function fhConnectCryptoWS(symbols){
   };
   fhCryptoWs.onmessage=function(e){ConnGuard.onWSMessage('crypto');handleFhMessage(e.data,'crypto')};
   fhCryptoWs.onerror=function(){ConnGuard.wsCryptoAlive=false};
-  fhCryptoWs.onclose=function(){ConnGuard.wsCryptoAlive=false;console.log('Crypto WS closed, reconnecting in 2s...');setTimeout(function(){fhConnectCryptoWS(_lastCryptoSyms)},2000)};
+  fhCryptoWs.onclose=function(){ConnGuard.wsCryptoAlive=false;
+    var delay=Math.min(30000,2000*Math.pow(2,window._wsCryptoRetries||0));
+    window._wsCryptoRetries=(window._wsCryptoRetries||0)+1;
+    console.log('Crypto WS closed, reconnecting in '+(delay/1000)+'s (attempt #'+window._wsCryptoRetries+')');
+    setTimeout(function(){fhConnectCryptoWS(_lastCryptoSyms)},delay);};
 }
 
 // Global reconnect functions called by ConnGuard health monitor
@@ -1364,7 +1374,9 @@ function mkChart(id){var el=document.getElementById(id);if(!el)return null;el.in
     rightPriceScale:{borderColor:getComputedStyle(document.documentElement).getPropertyValue('--bd').trim()||'#30363d',scaleMargins:{top:.08,bottom:.15}},
     timeScale:{borderColor:getComputedStyle(document.documentElement).getPropertyValue('--bd').trim()||'#30363d',timeVisible:true,secondsVisible:false}});}
 
-function loadCh(cid,data,key){if(chrt[key])try{chrt[key].remove()}catch(e){}
+function loadCh(cid,data,key){
+  // Properly destroy old chart to prevent memory leaks
+  if(chrt[key]){try{chrt[key].remove()}catch(e){}delete chrt[key];delete ser[key];}
   var ch=mkChart(cid);if(!ch||!data||!data.length)return;chrt[key]=ch;
   var _grn=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
   var _red=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
@@ -1905,14 +1917,26 @@ function analyzeMarket(){
     var s50=d.length>=50?sma(d,50):s20;
     var hasPos=account.positions.find(function(p){return p.id===a.id});
 
-    // RSI signals — deeper history gives more accurate RSI
-    if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — strong bounce expected'+(d.length>200?' ('+d.length+' candles)':''),conf:80,strat:'meanrev'});
-    else if(rsi<35)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold — mean reversion likely',conf:70,strat:'meanrev'});
+    // Entry confirmation: check if RSI is bouncing (current > 2 bars ago)
+    var prevRsi=d.length>=22?cRSIat(d,d.length-3):rsi;
+    var rsiBouncing=rsi>prevRsi+2; // RSI recovering by at least 2 points
+    // Entry confirmation: check if last candle closed bullish
+    var lastBullish=d.length>=2&&d[d.length-1].close>d[d.length-1].open;
+    // ADX for trend strength (skip momentum signals in ranging markets)
+    var adxVal=0;try{adxVal=calcADX(d).adx||0;}catch(e){}
+    var isRanging=adxVal<20;
+
+    // RSI signals WITH CONFIRMATION — require bounce, not just oversold
+    if(rsi<25&&rsiBouncing)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold + bouncing (confirmed) '+(d.length>200?' ['+d.length+' candles]':''),conf:82,strat:'meanrev'});
+    else if(rsi<25)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' deeply oversold — waiting for bounce confirmation',conf:65,strat:'meanrev'});
+    else if(rsi<35&&rsiBouncing&&lastBullish)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold + bounce + bullish candle (confirmed)',conf:72,strat:'meanrev'});
+    else if(rsi<35)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'RSI='+rsi.toFixed(0)+' oversold — awaiting confirmation',conf:55,strat:'meanrev'});
     if(rsi>80&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' extremely overbought — take profit',conf:82,strat:'meanrev'});
     else if(rsi>70&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'RSI='+rsi.toFixed(0)+' overbought — caution',conf:62,strat:'meanrev'});
 
-    // SMA trend signals — with deep history, also use SMA100/200
-    if(pr>s20&&s20>s50&&ch>0.5)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Strong uptrend — price > SMA20 > SMA50, momentum +'+ch.toFixed(1)+'%',conf:72,strat:'momentum'});
+    // SMA trend signals — SKIP in ranging markets (ADX<20)
+    if(pr>s20&&s20>s50&&ch>0.5&&!isRanging)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Strong uptrend — price > SMA20 > SMA50, momentum +'+ch.toFixed(1)+'%'+(isRanging?' [RANGING - reduced]':''),conf:72,strat:'momentum'});
+    else if(pr>s20&&s20>s50&&ch>0.5&&isRanging)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Uptrend but ADX='+adxVal.toFixed(0)+' (ranging) — reduced confidence',conf:55,strat:'momentum'});
     if(pr<s20&&s20<s50&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Downtrend — price below both SMAs',conf:74,strat:'momentum'});
     // Deep history bonus: SMA200 golden cross
     if(d.length>=200){
@@ -2076,9 +2100,10 @@ function analyzeMarket(){
   }
 
   // Apply adaptive confidence weights (Task 3b)
+  // Cap at 90% to prevent confidence inflation from stacking boosters
   moves.forEach(function(m){
     var w=bot.stratWeights[m.strat]||1.0;
-    m.conf=Math.min(99,Math.max(1,m.conf*w));
+    m.conf=Math.min(90,Math.max(1,m.conf*w));
   });
 
   // Batch 8: ADX-based confidence adjustment
@@ -2217,13 +2242,14 @@ function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||am
   showToast('[BUY] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr),'buy');
   updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
 
-window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos)return null;
+window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos){if(bot.on)blog('Sell skipped: no position for '+id,'warning');return null;}
+  if(pos._selling){blog('Sell skipped: already closing '+pos.sym,'warning');return null;}pos._selling=true;
   var pr=prOf(id);if(!pr)return null;if(!qty||qty>=pos.qty)qty=pos.qty;
   var feeProfile=getFeeProfile(id);
   var gross=qty*pr;var cost=calculateTradeCost(gross,feeProfile,'sell',.03);var net=gross-cost.total;
   var invested=qty*pos.avgPrice;var pnl=net-invested;
   account.cash+=net;account.dayPnL+=pnl;bot.pnl+=pnl;account.fees+=cost.total;
-  pos.qty-=qty;if(pos.qty<.00001)account.positions=account.positions.filter(function(p){return p.id!==id});
+  pos._selling=false;pos.qty-=qty;if(pos.qty<.00001)account.positions=account.positions.filter(function(p){return p.id!==id});
   var profName=(FEE_PROFILES[feeProfile]||{name:feeProfile}).name;
   var sym=(findA(id)||{sym:id}).sym;
   var t={type:'SELL',id:id,sym:sym,qty:qty,price:pr,amount:net,gross:gross,invested:invested,pnl:pnl,fees:cost.total,
@@ -2657,8 +2683,28 @@ function runBot(){if(!bot.on)return;
     if(trail>0&&pos.highWater&&pct>0&&trailPct<=-trail){
       var r='Trailing stop triggered at '+((trailPct*100).toFixed(1))+'% from peak $'+fp(pos.highWater);
       blog('TRAIL STOP: '+pos.sym+' — fell '+((Math.abs(trailPct)*100).toFixed(1))+'% from peak');sellA(pos.id,null,r);return;}
-    if(pct<=-sl){var r='Stop loss triggered at '+((pct*100).toFixed(1))+'% (limit: -'+(sl*100).toFixed(0)+'%)';blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}
-    else if(pct>=tp){var r='Take profit hit at +'+((pct*100).toFixed(1))+'% (target: +'+(tp*100).toFixed(0)+'%)';blog('TAKE PROFIT: '+pos.sym+' at +'+((pct*100).toFixed(1))+'%');sellA(pos.id,null,r);}});
+    if(pct<=-sl){var r='Stop loss triggered at '+((pct*100).toFixed(1))+'% (limit: -'+(sl*100).toFixed(0)+'%)';blog('STOP LOSS: '+pos.sym+' at '+((pct*100).toFixed(1))+'%','trade');sellA(pos.id,null,r);}
+    else{
+      // Profit-taking ladder: sell in 4 stages instead of all-or-nothing
+      var tpStages=[
+        {pct:tp*0.5, sold:'tp1', portion:0.25, label:'TP Level 1 ('+((tp*50).toFixed(0))+'%)'},
+        {pct:tp*0.75, sold:'tp2', portion:0.25, label:'TP Level 2 ('+((tp*75).toFixed(0))+'%)'},
+        {pct:tp, sold:'tp3', portion:0.25, label:'TP Level 3 ('+((tp*100).toFixed(0))+'%)'},
+        {pct:tp*1.5, sold:'tp4', portion:0.25, label:'TP Level 4 ('+((tp*150).toFixed(0))+'%)'},
+      ];
+      if(!pos._tpSold)pos._tpSold={};
+      for(var tpi=0;tpi<tpStages.length;tpi++){
+        var stage=tpStages[tpi];
+        if(pct>=stage.pct&&!pos._tpSold[stage.sold]){
+          pos._tpSold[stage.sold]=true;
+          var sellQty=pos.qty*stage.portion;
+          if(tpi===tpStages.length-1)sellQty=pos.qty; // Sell remaining on final stage
+          blog('PROFIT LADDER: '+pos.sym+' '+stage.label+' hit at +'+((pct*100).toFixed(1))+'% — selling '+((stage.portion*100).toFixed(0))+'%','trade');
+          sellA(pos.id,sellQty,'Profit ladder '+stage.label+' at +'+((pct*100).toFixed(1))+'%');
+          break; // Only trigger one stage per tick
+        }
+      }
+    }});
 
   // Signal-based sell logic — check sell signals from analyzeMarket for held positions
   var _sellMoves=analyzeMarket().filter(function(m){return m.dir==='sell'});
@@ -3732,12 +3778,23 @@ function calcKellySize(conf){
   var avgWin=wins.length?wins.reduce(function(s,t){return s+t.pnl},0)/wins.length:0;
   var avgLoss=losses.length?Math.abs(losses.reduce(function(s,t){return s+t.pnl},0)/losses.length):1;
   var wlRatio=avgLoss>0?avgWin/avgLoss:1;
-  var kelly=winRate-(1-winRate)/wlRatio;
-  // Half Kelly for safety
-  kelly=kelly/2;
+  // Kelly formula with edge case protection
+  var kelly=0;
+  if(wlRatio>0&&winRate>0){
+    kelly=winRate-(1-winRate)/wlRatio;
+  }
+  // Reject Kelly if losing system (negative kelly or win rate < 40% or profit factor < 1.2)
+  var profitFactor=avgLoss>0?(avgWin*winRate)/(avgLoss*(1-winRate)):0;
+  if(kelly<=0||winRate<0.4||profitFactor<1.2){
+    // Fall back to fixed sizing — system isn't profitable enough for Kelly
+    var fixedSz=pv*(parseFloat(gv('r-size')||10)/100);
+    return{size:Math.max(100,fixedSz),method:'kelly (fallback to fixed — PF='+profitFactor.toFixed(2)+')',kelly:'0',winRate:(winRate*100).toFixed(0),wlRatio:wlRatio.toFixed(2)};
+  }
+  // Quarter Kelly for safety (more conservative than half)
+  kelly=Math.min(0.20,kelly/4); // Cap at 20% max
   var maxPct=parseFloat(gv('r-size')||10)/100;
-  var sz=Math.max(100,Math.min(pv*maxPct,pv*Math.max(0,kelly)));
-  return{size:sz,method:'kelly',kelly:(kelly*100).toFixed(1),winRate:(winRate*100).toFixed(0),wlRatio:wlRatio.toFixed(2)};
+  var sz=Math.max(100,Math.min(pv*maxPct,pv*kelly));
+  return{size:sz,method:'kelly (¼K)',kelly:(kelly*100).toFixed(1),winRate:(winRate*100).toFixed(0),wlRatio:wlRatio.toFixed(2),profitFactor:profitFactor.toFixed(2)};
 }
 function setStatus(s,t){var d=document.getElementById('st-dot'),x=document.getElementById('st-txt');if(d)d.className='w-2 h-2 rounded-full '+(s==='ok'?'bg-grn':s==='err'?'bg-red':'bg-ylw pulse');if(x)x.textContent=t}
 
