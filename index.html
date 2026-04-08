@@ -532,7 +532,7 @@ select.inp{appearance:auto}
       </div>
     </div>
     <div class="pb" style="min-height:170px;position:relative">
-      <div id="equity-chart" style="width:100%;height:100%;position:absolute;inset:0"><div class="flex items-center justify-center h-full text-t2 text-xs">Start bot to track equity</div></div>
+      <div id="equity-chart" style="width:100%;height:100%;position:absolute;inset:0"><div class="flex items-center justify-center h-full text-t2 text-xs">Loading equity data...</div></div>
       <div id="benchmark-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data</div></div>
       <div id="drawdown-chart" style="width:100%;height:100%;position:absolute;inset:0;display:none"><div class="flex items-center justify-center h-full text-t2 text-xs">Need equity data</div></div>
     </div>
@@ -4093,6 +4093,12 @@ setInterval(function(){
     }
   }
 },10000);
+// Track equity independently of bot — runs every 30 seconds regardless of bot state
+setInterval(function(){
+  if(account.positions.length>0||account.cash!==account.start){
+    trackEquity();
+  }
+},30000);
 // Save on page unload
 window.addEventListener('beforeunload',function(){
   saveState();
@@ -6144,6 +6150,8 @@ loadAll();
 // Fetch prices for ALL held positions (cross-market) on load and every 30s
 setTimeout(fetchHeldPositionPrices, 2000);
 setInterval(fetchHeldPositionPrices, 30000);
+// Track initial equity point once prices are loaded (regardless of bot state)
+setTimeout(function(){trackEquity();},8000);
 updateDcaTargets();
 loadPriceAlerts();renderAlerts();populateAlertAssets();populateRebalAssets();
 // Batch 6: Init pending orders, order assets, risk analytics, schedule, notif prefs
@@ -6195,6 +6203,8 @@ if(SUPABASE_URL && SUPABASE_ANON) {
   SB.init(SUPABASE_URL, SUPABASE_ANON);
   // Ensure server bot toggle state is restored after login settles
   setTimeout(function(){if(SB.user&&typeof loadServerBotState==='function')loadServerBotState();},4000);
+  // Load equity history from Supabase (independent of bot state)
+  setTimeout(function(){if(SB.user&&typeof loadEquityFromSupabase==='function')loadEquityFromSupabase();},5000);
   // Batch 9: Fetch dynamic correlations from Supabase after init
   setTimeout(fetchDynamicCorrelations,6000);
   setInterval(fetchDynamicCorrelations,1800000); // Refresh every 30 min
