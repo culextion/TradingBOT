@@ -367,6 +367,13 @@ select.inp{appearance:auto}
           <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="bot-mkt-stocks" checked onchange="saveBotMarkets()" style="width:13px;height:13px"><span class="text-t1">Stocks</span></label>
         </div>
         <div class="text-t2" style="font-size:9px">Bot will only trade in checked markets</div>
+        <div class="mt-2"><label class="text-t2" style="font-size:9px">Scan Mode</label>
+          <select id="bot-scan-mode" class="inp" style="font-size:11px" onchange="bot.scanMode=this.value;blog('Scan mode: '+this.value)">
+            <option value="watchlist">Watchlist Only — trade only your watchlist items</option>
+            <option value="coinbase">Coinbase Scan — scan all Coinbase-tradeable assets</option>
+          </select>
+          <div class="text-t2" style="font-size:9px;margin-top:2px"><span id="coinbase-count"></span></div>
+        </div>
       </div>
       <div><label class="text-t2 text-xs block mb-1">Strategy</label>
         <select id="strat-sel" class="inp" onchange="onStratChange()">
@@ -996,12 +1003,122 @@ var wl=[];// custom watchlist
 var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
 var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
   cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
-  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0,vwap:1.0,divergence:1.0},
+  stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0,vwap:1.0,divergence:1.0,ichimoku:1.0,fibonacci:1.0},
   consecutiveLosses:0,                                   // Task 3d
   pausedUntil:0,                                         // Task 3d
   tickCount:0,                                           // Tick counter for summary logging
-  lastSignalSummary:''                                   // Last signal summary for periodic log
+  lastSignalSummary:'',                                  // Last signal summary for periodic log
+  scanMode:'watchlist'                                    // 'watchlist' | 'coinbase' | 'full'
 };
+
+// ===================== COINBASE ASSET UNIVERSE =====================
+var coinbaseAssets=[]; // [{id,sym,name,status}] — all Coinbase-tradeable USD pairs
+var coinbaseLastFetch=0;
+var trendingCoins=[]; // CoinGecko trending
+var topMovers={gainers:[],losers:[]}; // Top movers
+
+function fetchCoinbaseAssets(){
+  if(Date.now()-coinbaseLastFetch<86400000&&coinbaseAssets.length)return Promise.resolve(coinbaseAssets); // Cache 24h
+  return fetch('https://api.exchange.coinbase.com/products')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      coinbaseAssets=d.filter(function(p){return p.quote_currency==='USD'&&p.status==='online'})
+        .map(function(p){return{id:p.base_currency.toLowerCase(),sym:p.base_currency,name:p.base_currency,pair:p.id,status:p.status}});
+      coinbaseLastFetch=Date.now();
+      try{localStorage.setItem('ct_coinbase_assets',JSON.stringify({data:coinbaseAssets,ts:Date.now()}))}catch(e){}
+      console.log('Loaded '+coinbaseAssets.length+' Coinbase USD pairs');
+      return coinbaseAssets;
+    }).catch(function(e){
+      console.warn('Coinbase API failed:',e);
+      try{var c=localStorage.getItem('ct_coinbase_assets');if(c){var p=JSON.parse(c);coinbaseAssets=p.data;coinbaseLastFetch=p.ts;}}catch(e){}
+      return coinbaseAssets;
+    });
+}
+
+function isOnCoinbase(sym){return coinbaseAssets.some(function(a){return a.sym===sym})}
+
+// Fetch CoinGecko trending
+function fetchTrending(){
+  return fetch('https://api.coingecko.com/api/v3/search/trending')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(d&&d.coins){
+        trendingCoins=d.coins.map(function(c){
+          var item=c.item;
+          return{id:item.id,sym:item.symbol.toUpperCase(),name:item.name,rank:item.market_cap_rank,
+            price:item.data?item.data.price:0,change24h:item.data?item.data.price_change_percentage_24h:0,
+            onCoinbase:isOnCoinbase(item.symbol.toUpperCase()),thumb:item.thumb};
+        });
+      }
+      return trendingCoins;
+    }).catch(function(){return trendingCoins});
+}
+
+// Fetch top movers (gainers/losers)
+function fetchTopMovers(){
+  return qApi('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=price_change_percentage_24h_desc&per_page=15&sparkline=false')
+    .then(function(d){
+      if(d&&d.length){
+        topMovers.gainers=d.filter(function(c){return c.price_change_percentage_24h>0}).slice(0,10).map(function(c){
+          return{id:c.id,sym:c.symbol.toUpperCase(),name:c.name,price:c.current_price,change:c.price_change_percentage_24h,
+            onCoinbase:isOnCoinbase(c.symbol.toUpperCase()),mcap:c.market_cap};
+        });
+        topMovers.losers=d.filter(function(c){return c.price_change_percentage_24h<0}).slice(0,10).map(function(c){
+          return{id:c.id,sym:c.symbol.toUpperCase(),name:c.name,price:c.current_price,change:c.price_change_percentage_24h,
+            onCoinbase:isOnCoinbase(c.symbol.toUpperCase()),mcap:c.market_cap};
+        });
+      }
+      return topMovers;
+    }).catch(function(){return topMovers});
+}
+
+// ===================== ICHIMOKU CLOUD =====================
+function calcIchimoku(data,tenkanP,kijunP,senkouP){
+  tenkanP=tenkanP||9;kijunP=kijunP||26;senkouP=senkouP||52;
+  if(!data||data.length<senkouP)return null;
+  function hl(d,start,len){var h=-Infinity,l=Infinity;for(var i=start;i<start+len&&i<d.length;i++){var hi=d[i].high||d[i].close,lo=d[i].low||d[i].close;if(hi>h)h=hi;if(lo<l)l=lo;}return(h+l)/2;}
+  var idx=data.length-1;
+  var tenkan=hl(data,idx-tenkanP+1,tenkanP);
+  var kijun=hl(data,idx-kijunP+1,kijunP);
+  var senkouA=(tenkan+kijun)/2;
+  var senkouB=hl(data,idx-senkouP+1,senkouP);
+  var cloudTop=Math.max(senkouA,senkouB);
+  var cloudBot=Math.min(senkouA,senkouB);
+  var price=data[idx].close;
+  var prevPrice=data[idx-1]?data[idx-1].close:price;
+  return{tenkan:tenkan,kijun:kijun,senkouA:senkouA,senkouB:senkouB,cloudTop:cloudTop,cloudBot:cloudBot,
+    aboveCloud:price>cloudTop,belowCloud:price<cloudBot,inCloud:price>=cloudBot&&price<=cloudTop,
+    tkCross:tenkan>kijun,prevTkCross:false, // simplified
+    bullish:price>cloudTop&&tenkan>kijun,bearish:price<cloudBot&&tenkan<kijun};
+}
+
+// ===================== FIBONACCI RETRACEMENT =====================
+function calcFibLevels(data,lookback){
+  lookback=lookback||50;
+  if(!data||data.length<lookback)return null;
+  var recent=data.slice(-lookback);
+  var high=-Infinity,low=Infinity;
+  recent.forEach(function(d){
+    var h=d.high||d.close,l=d.low||d.close;
+    if(h>high)high=h;if(l<low)low=l;
+  });
+  var diff=high-low;if(diff<0.001)return null;
+  return{
+    high:high,low:low,
+    level236:high-diff*0.236,
+    level382:high-diff*0.382,
+    level500:high-diff*0.500,
+    level618:high-diff*0.618,
+    level786:high-diff*0.786,
+    // Nearest level to current price
+    nearest:function(price){
+      var levels=[{name:'23.6%',p:high-diff*0.236},{name:'38.2%',p:high-diff*0.382},{name:'50%',p:high-diff*0.5},{name:'61.8%',p:high-diff*0.618},{name:'78.6%',p:high-diff*0.786}];
+      var closest=levels[0],minDist=Math.abs(price-levels[0].p);
+      levels.forEach(function(l){var d=Math.abs(price-l.p);if(d<minDist){minDist=d;closest=l;}});
+      return{level:closest,distance:((price-closest.p)/closest.p*100).toFixed(2)};
+    }
+  };
+}
 var apiQ=[],apiOn=false;
 var tileDays={main:7,c2:7,c3:7};
 var tileAsset={main:'bitcoin',c2:'ethereum',c3:'solana'};
@@ -1741,7 +1858,19 @@ function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)r
 
 // ===================== MARKET ANALYSIS =====================
 function analyzeMarket(){
-  var moves=[];var wla=getWL();
+  var moves=[];
+  var wla=getWL();
+
+  // In Coinbase scan mode, add trending coins that have price data
+  if(bot.scanMode==='coinbase'&&trendingCoins.length){
+    var wlIds={};wla.forEach(function(a){wlIds[a.id]=true;});
+    trendingCoins.forEach(function(t){
+      if(!wlIds[t.id]&&t.onCoinbase&&prices[t.id]){
+        wla.push({id:t.id,sym:t.sym,name:t.name});
+      }
+    });
+  }
+
   wla.forEach(function(a){
     // Use deeper accumulated history when available for better indicators
     var d=mkt==='crypto'?(ohlcDeep[a.id]&&ohlcDeep[a.id].length>(ohlc[a.id]?ohlc[a.id].length:0)?ohlcDeep[a.id]:ohlc[a.id]):stkData[a.id];
@@ -1824,6 +1953,31 @@ function analyzeMarket(){
       // Bullish divergence: price makes lower low but RSI makes higher low
       if(recentPriceLow<priceLow&&recentRsiAtLow>rsiAtLow+5&&!hasPos){
         moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Bullish divergence — price new low but RSI rising ('+recentRsiAtLow.toFixed(0)+' vs '+rsiAtLow.toFixed(0)+')',conf:75,strat:'divergence'});
+      }
+    }
+
+    // Ichimoku Cloud
+    if(d.length>=52){
+      var ichi=calcIchimoku(d);
+      if(ichi){
+        if(ichi.bullish&&!hasPos)moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Ichimoku bullish — price above cloud, Tenkan > Kijun',conf:73,strat:'ichimoku'});
+        if(ichi.bearish&&hasPos)moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Ichimoku bearish — price below cloud, Tenkan < Kijun',conf:71,strat:'ichimoku'});
+      }
+    }
+
+    // Fibonacci Retracement
+    if(d.length>=50){
+      var fib=calcFibLevels(d);
+      if(fib){
+        var nearest=fib.nearest(pr);
+        var distPct=Math.abs(parseFloat(nearest.distance));
+        // Price bouncing off a Fib level (within 0.5%)
+        if(distPct<0.5&&ch>0&&!hasPos){
+          moves.push({sym:a.sym,id:a.id,dir:'buy',reason:'Price at Fibonacci '+nearest.level.name+' ($'+fp(nearest.level.p)+') — support bounce',conf:67,strat:'fibonacci'});
+        }
+        if(distPct<0.5&&ch<0&&hasPos){
+          moves.push({sym:a.sym,id:a.id,dir:'sell',reason:'Price at Fibonacci '+nearest.level.name+' ($'+fp(nearest.level.p)+') — resistance rejection',conf:65,strat:'fibonacci'});
+        }
       }
     }
 
@@ -4366,15 +4520,54 @@ var _newsCache=[];var _newsLastFetch=0;
 
 function fetchCryptoNews(){
   if(Date.now()-_newsLastFetch<120000&&_newsCache.length)return Promise.resolve(_newsCache);
-  return fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest')
+
+  // Use Finnhub for general market news (works with our API key)
+  var newsUrl='https://finnhub.io/api/v1/news?category='+(mkt==='crypto'?'crypto':'general')+'&token='+FH_STOCK_KEY;
+  return fetch(newsUrl)
     .then(function(r){return r.json()})
     .then(function(d){
-      if(d&&d.Data&&d.Data.length){
-        _newsCache=d.Data.slice(0,20);_newsLastFetch=Date.now();
+      if(d&&d.length){
+        _newsCache=d.slice(0,20).map(function(n){
+          // Normalize to common format
+          return {title:n.headline||'',url:n.url||'',source:n.source||'Finnhub',
+            published_on:n.datetime||Math.floor(Date.now()/1000),
+            body:n.summary||'',imageurl:n.image||'',
+            // Simple sentiment scoring
+            sentiment:scoreSentiment(n.headline+' '+(n.summary||''))};
+        });
+        _newsLastFetch=Date.now();
       }
       return _newsCache;
     })
-    .catch(function(){return _newsCache;});
+    .catch(function(e){
+      console.warn('[News] Finnhub failed, trying fallback:',e.message);
+      // Fallback: CoinGecko trending as "news"
+      return fetch('https://api.coingecko.com/api/v3/search/trending')
+        .then(function(r){return r.json()})
+        .then(function(d){
+          if(d&&d.coins){
+            _newsCache=d.coins.map(function(c){
+              var item=c.item;
+              return {title:item.name+' ('+item.symbol+') trending — #'+item.market_cap_rank+' by market cap',
+                url:'https://www.coingecko.com/en/coins/'+item.id,source:'CoinGecko Trending',
+                published_on:Math.floor(Date.now()/1000),body:'',imageurl:item.thumb||'',sentiment:1};
+            });
+            _newsLastFetch=Date.now();
+          }
+          return _newsCache;
+        }).catch(function(){return _newsCache;});
+    });
+}
+
+// Sentiment scoring for news headlines
+var _bullWords=['surge','rally','breakout','bullish','ath','soar','jump','gain','record','boom','moon','pump','buy','upgrade','beat','outperform'];
+var _bearWords=['crash','dump','bearish','fraud','hack','scam','plunge','drop','fall','fear','sell','decline','loss','risk','warn','downgrade'];
+function scoreSentiment(text){
+  if(!text)return 0;
+  var t=text.toLowerCase();var score=0;
+  _bullWords.forEach(function(w){if(t.indexOf(w)>-1)score++});
+  _bearWords.forEach(function(w){if(t.indexOf(w)>-1)score--});
+  return score;
 }
 
 function timeAgo(ts){
@@ -4619,15 +4812,49 @@ function renderTrending(){
   if(!el||!row)return;
   if(!top3.length||top3[0].ch<0.1){row.style.display='none';return;}
   row.style.display='flex';
-  el.innerHTML=top3.map(function(item){
+
+  // Mix watchlist movers with CoinGecko trending (if available)
+  var trendHtml=top3.map(function(item){
     var a=item.a,ch=item.raw,u=ch>=0;
     var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];var sp=spark(d,u);
+    var cbBadge=isOnCoinbase(a.sym)?'<span style="font-size:7px;background:var(--blu);color:#fff;padding:1px 3px;border-radius:2px;margin-left:2px">CB</span>':'';
     return '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--s1);border:1px solid var(--bd);border-radius:6px;flex:1;min-width:0;cursor:pointer" onclick="_sel(\''+a.id+'\')">'+
-      '<span class="font-bold text-t1" style="font-size:11px">'+a.sym+'</span>'+
+      '<span class="font-bold text-t1" style="font-size:11px">'+a.sym+cbBadge+'</span>'+
       sp+
       '<span class="font-bold '+(u?'text-grn':'text-red')+'" style="font-size:11px">'+(u?'+':'')+ch.toFixed(2)+'%</span>'+
     '</div>';
   }).join('');
+
+  // Add trending coins not already in watchlist
+  if(trendingCoins.length&&mkt==='crypto'){
+    var wlIds={};wla.forEach(function(a){wlIds[a.id]=true;});
+    var newTrending=trendingCoins.filter(function(t){return!wlIds[t.id]}).slice(0,2);
+    if(newTrending.length){
+      trendHtml+=newTrending.map(function(t){
+        var cbBadge=t.onCoinbase?'<span style="font-size:7px;background:var(--blu);color:#fff;padding:1px 3px;border-radius:2px;margin-left:2px">CB</span>':'';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--s1);border:1px solid var(--ylw);border-radius:6px;flex:1;min-width:0;cursor:pointer" onclick="addWL(\''+t.id+'\',\''+t.sym+'\',\''+t.name.replace(/'/g,"\\'")+'\');showToast(\'Added '+t.sym+' to watchlist\',\'info\')" title="Trending — click to add to watchlist">'+
+          '<span class="font-bold text-ylw" style="font-size:11px">'+t.sym+cbBadge+'</span>'+
+          '<span class="text-t2" style="font-size:9px">trending</span>'+
+        '</div>';
+      }).join('');
+    }
+  }
+  el.innerHTML=trendHtml;
+}
+
+// Initialize market scanner data
+function initScanner(){
+  fetchCoinbaseAssets().then(function(){
+    console.log('Coinbase assets loaded:',coinbaseAssets.length);
+    var countEl=document.getElementById('coinbase-count');
+    if(countEl)countEl.textContent=coinbaseAssets.length+' Coinbase USD pairs available for scanning';
+    fetchTrending().then(function(){renderTrending()});
+    fetchTopMovers();
+  });
+  // Refresh trending every 5 minutes
+  setInterval(function(){fetchTrending().then(function(){renderTrending()})},300000);
+  // Refresh top movers every 5 minutes
+  setInterval(function(){fetchTopMovers()},300000);
 }
 
 // ===================== BOT STATUS WIDGET (Batch 4 Task 4) =====================
@@ -5701,6 +5928,7 @@ setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textCon
 onStratChange();
 loadBotMarkets();
 initTicker();
+initScanner();
 loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
 // Fetch prices for ALL held positions (cross-market) on load and every 30s
