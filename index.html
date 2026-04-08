@@ -2886,7 +2886,9 @@ function generateAISummary(){
     var losses=sells.length-wins;
     parts.push('It made <strong>'+bot.trades+' trade'+(bot.trades>1?'s':'')+'</strong>'+
       (sells.length>0?' ('+wins+' win'+(wins!==1?'s':'')+', '+losses+' loss'+(losses!==1?'es':'')+')'  :'')+
-      ' with a net P&L of <strong class="'+(bot.pnl>=0?'text-grn':'text-red')+'">'+(bot.pnl>=0?'+':'-')+'$'+fp(Math.abs(bot.pnl))+'</strong>.');
+      '.');
+    var totalPnl=portVal()-account.start;
+    parts.push('Total P&L: <strong class="'+(totalPnl>=0?'text-grn':'text-red')+'">'+(totalPnl>=0?'+':'-')+'$'+fp(Math.abs(totalPnl))+'</strong> (realized: '+(bot.pnl>=0?'+':'-')+'$'+fp(Math.abs(bot.pnl))+', unrealized: '+(totalPnl-bot.pnl>=0?'+':'-')+'$'+fp(Math.abs(totalPnl-bot.pnl))+').');
   }
 
   // Current positions
