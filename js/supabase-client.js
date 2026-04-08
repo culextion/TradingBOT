@@ -89,6 +89,9 @@ var SB = {
       if (typeof renderPendingOrders === 'function') renderPendingOrders();
       // Fetch live prices for ALL held positions (cross-market)
       if (typeof fetchHeldPositionPrices === 'function') setTimeout(fetchHeldPositionPrices, 1000);
+      // Sync cloud state back to localStorage so offline/refresh works correctly
+      if (typeof saveState === 'function') saveState();
+      console.log('Cloud sync complete — account: $' + (typeof account !== 'undefined' ? account.cash : '?') + ', positions: ' + (typeof account !== 'undefined' ? account.positions.length : '?'));
     } catch(e) { console.error('Sync error on login:', e); }
     // Update UI
     if (typeof updateAuthUI === 'function') updateAuthUI(true);

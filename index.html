@@ -3639,35 +3639,54 @@ function saveState(){
 }
 function loadState(){
   try{
-    var sa=localStorage.getItem('ct_account');
-    if(sa){var a=JSON.parse(sa);account.cash=a.cash;account.start=a.start;account.positions=a.positions||[];account.trades=a.trades||[];account.dayPnL=a.dayPnL||0;account.fees=a.fees||0;}
-    var sb=localStorage.getItem('ct_bot');
-    if(sb){var b=JSON.parse(sb);bot.strat=b.strat;bot.pnl=b.pnl||0;bot.trades=b.trades||0;bot.logs=b.logs||[];
-      if(b.stratWeights)bot.stratWeights=b.stratWeights;
-      if(b.consecutiveLosses)bot.consecutiveLosses=b.consecutiveLosses;
-      if(b.cooldowns)bot.cooldowns=b.cooldowns;
-      // Auto-restart bot if it was running before refresh
-      if(b.on){setTimeout(function(){if(typeof startBot==='function')startBot();},2000);}
+    // Only use localStorage as fallback when NOT logged into Supabase
+    // If logged in, Supabase onLogin() is the source of truth
+    var hasSupabaseSession=false;
+    try{var sk=localStorage.getItem('sb-'+SUPABASE_URL.split('//')[1].split('.')[0]+'-auth-token');hasSupabaseSession=!!sk;}catch(e){}
+
+    if(!hasSupabaseSession){
+      // No Supabase session — use localStorage as primary source
+      var sa=localStorage.getItem('ct_account');
+      if(sa){var a=JSON.parse(sa);account.cash=a.cash;account.start=a.start;account.positions=a.positions||[];account.trades=a.trades||[];account.dayPnL=a.dayPnL||0;account.fees=a.fees||0;}
+      var sb=localStorage.getItem('ct_bot');
+      if(sb){var b=JSON.parse(sb);bot.strat=b.strat;bot.pnl=b.pnl||0;bot.trades=b.trades||0;bot.logs=b.logs||[];
+        if(b.stratWeights)bot.stratWeights=b.stratWeights;
+        if(b.consecutiveLosses)bot.consecutiveLosses=b.consecutiveLosses;
+        if(b.cooldowns)bot.cooldowns=b.cooldowns;
+        // Auto-restart bot only if no Supabase (Supabase handles restart in onLogin)
+        if(b.on){setTimeout(function(){if(typeof startBot==='function')startBot();},2000);}
+      }
+    } else {
+      console.log('Supabase session detected — waiting for cloud sync (localStorage skipped for account/bot data)');
+      // Still load UI preferences from localStorage (these are device-specific)
     }
+
+    // Always load UI preferences from localStorage (device-specific settings)
     var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
     var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
     var sfc=localStorage.getItem('ct_fee_crypto');if(sfc){var el=document.getElementById('fee-sel-crypto');if(el)el.value=sfc;}
     var sfs=localStorage.getItem('ct_fee_stocks');if(sfs){var el=document.getElementById('fee-sel-stocks');if(el)el.value=sfs;}
-    // Risk controls
     var rv=function(k,id){var v=localStorage.getItem(k);if(v){var el=document.getElementById(id);if(el)el.value=v;}};
     rv('ct_rsize','r-size');rv('ct_rsl','r-sl');rv('ct_rtp','r-tp');rv('ct_rmax','r-max');rv('ct_rdll','r-dll');rv('ct_rtrail','r-trail');
     var sps=localStorage.getItem('ct_pos_sizing');if(sps){_positionSizingMode=sps;var pse=document.getElementById('pos-sizing-mode');if(pse)pse.value=sps;}
-  }catch(e){}
+  }catch(e){console.error('loadState error:',e)}
 }
 // Auto-save every 10 seconds (localStorage + Supabase)
 setInterval(function(){
   saveState();
-  // Sync bot state to Supabase every 30 seconds if logged in
-  if(SB.user&&Date.now()-(window._lastSBSync||0)>30000){
+  // Sync full state to Supabase every 15 seconds if logged in
+  if(SB.user&&Date.now()-(window._lastSBSync||0)>15000){
     window._lastSBSync=Date.now();
-    SB.saveSettings().catch(function(){});
+    SB.saveSettings().catch(function(e){console.warn('Settings sync failed:',e)});
     SB.updateCash(account.cash).catch(function(){});
     SB.savePositions(account.positions).catch(function(){});
+    // Also save trades (last 50) so other devices see trade history
+    if(account.trades.length>0){
+      var latestTrade=account.trades[0];
+      if(latestTrade&&latestTrade._synced!==true){
+        SB.saveTrade(latestTrade).then(function(){latestTrade._synced=true}).catch(function(){});
+      }
+    }
   }
 },10000);
 // Save on page unload
