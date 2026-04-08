@@ -2261,24 +2261,73 @@ var equityCurve=[];
 var _eqChartInst=null,_eqSeries=null,_ddChartInst=null,_ddSeries=null,_bmChartInst=null,_bmSeries1=null,_bmSeries2=null;
 var _activeEqView='equity';
 var _tradeFilter='all';
+var _lastEquitySave=0;
 
 function trackEquity(){
   var v=portVal();
-  equityCurve.push({time:Math.floor(Date.now()/1000),value:v});
-  if(equityCurve.length>500)equityCurve.shift();
+  var now=Math.floor(Date.now()/1000);
+  // Deduplicate: don't add if same second as last point
+  if(equityCurve.length&&equityCurve[equityCurve.length-1].time===now)return;
+  equityCurve.push({time:now,value:v});
+  // No cap — keep full history in memory (Supabase is the long-term store)
   renderEquityCurve();
+  // Save to Supabase every 5 minutes (not every tick)
+  if(SB.user&&Date.now()-_lastEquitySave>300000){
+    _lastEquitySave=Date.now();
+    saveEquityToSupabase(v);
+  }
+}
+
+function saveEquityToSupabase(v){
+  if(!SB.user||!SB.accountId)return;
+  var posVal=v-account.cash;
+  fetch(SUPABASE_URL+'/rest/v1/equity_history',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({user_id:SB.user.id,account_id:SB.accountId,timestamp:new Date().toISOString(),portfolio_value:v,cash:account.cash,positions_value:posVal})
+  }).catch(function(e){console.error('Equity save error:',e);});
+}
+
+async function loadEquityFromSupabase(){
+  if(!SB.user)return;
+  try{
+    var token=typeof getAuthToken==='function'?await getAuthToken():SUPABASE_ANON;
+    var url=SUPABASE_URL+'/rest/v1/equity_history?user_id=eq.'+SB.user.id+'&order=timestamp.asc&limit=10000';
+    if(SB.accountId)url+='&account_id=eq.'+SB.accountId;
+    var resp=await fetch(url,{headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+token}});
+    var data=await resp.json();
+    if(data&&data.length){
+      // Merge with any existing in-memory points (dedup by timestamp)
+      var seen={};
+      var merged=[];
+      data.forEach(function(d){
+        var t=Math.floor(new Date(d.timestamp).getTime()/1000);
+        if(!seen[t]){seen[t]=true;merged.push({time:t,value:parseFloat(d.portfolio_value)});}
+      });
+      equityCurve.forEach(function(p){if(!seen[p.time]){seen[p.time]=true;merged.push(p);}});
+      merged.sort(function(a,b){return a.time-b.time;});
+      equityCurve=merged;
+      console.log('Loaded '+data.length+' equity points from Supabase ('+merged.length+' total after merge)');
+      // Reset chart to show full history
+      if(_eqChartInst&&_eqSeries){_eqSeries.setData(equityCurve);_eqChartInst.timeScale().fitContent();}
+      else renderEquityCurve();
+    }
+  }catch(e){console.error('Load equity error:',e);}
 }
 
 function renderEquityCurve(){
   var el=document.getElementById('equity-chart');if(!el||equityCurve.length<2)return;
+  var _g=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
+  var _r=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
+  var up=equityCurve[equityCurve.length-1].value>=equityCurve[0].value;
+  var col=up?_g:_r;
   if(!_eqChartInst){
     _eqChartInst=mkChart('equity-chart');if(!_eqChartInst)return;
     chrt['equity']=_eqChartInst;
-    var up=equityCurve[equityCurve.length-1].value>=equityCurve[0].value;
-    var _g=getComputedStyle(document.documentElement).getPropertyValue('--grn').trim()||'#3fb950';
-    var _r=getComputedStyle(document.documentElement).getPropertyValue('--red').trim()||'#f85149';
-    var col=up?_g:_r;
     _eqSeries=_eqChartInst.addAreaSeries({topColor:col+'40',bottomColor:col+'08',lineColor:col,lineWidth:2,priceLineVisible:false});
+  } else {
+    // Update colors dynamically based on overall performance
+    _eqSeries.applyOptions({topColor:col+'40',bottomColor:col+'08',lineColor:col});
   }
   _eqSeries.setData(equityCurve);
   _eqChartInst.timeScale().fitContent();
@@ -3886,7 +3935,7 @@ setInterval(function(){
 // Save on page unload
 window.addEventListener('beforeunload',function(){
   saveState();
-  if(SB.user){try{SB.saveSettings();SB.updateCash(account.cash);SB.savePositions(account.positions);}catch(e){}}
+  if(SB.user){try{SB.saveSettings();SB.updateCash(account.cash);SB.savePositions(account.positions);saveEquityToSupabase(portVal());}catch(e){}}
 });
 
 // ===================== KEYBOARD SHORTCUTS =====================
