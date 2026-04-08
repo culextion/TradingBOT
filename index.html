@@ -3284,7 +3284,8 @@ window.runSim=function(){var el=document.getElementById('sim-out');if(!el)return
   var getData=mkt==='crypto'?cgOHLC(aid,days):Promise.resolve(a&&a.base?genStk(a,bars):[]);
   getData.then(function(data){if(!data||data.length<60){el.innerHTML='<div class="text-ylw text-xs">Not enough data (need 60+ bars). Try a longer period.</div>';return;}
     var startCap=100000;
-    var res=Simulator.backtest(strat,data,gv('fee-sel')||'coinbase_adv',{maxPositionPct:10,stopLossPct:5,takeProfitPct:10,maxConcurrentPos:5},startCap);
+    var simFeeProfile=mkt==='crypto'?(gv('fee-sel-crypto')||'coinbase_adv'):(gv('fee-sel-stocks')||'alpaca');
+    var res=Simulator.backtest(strat,data,simFeeProfile,{maxPositionPct:10,stopLossPct:5,takeProfitPct:10,maxConcurrentPos:5},startCap);
     var m=res.metrics;if(!m){el.innerHTML='<div class="text-t2 text-xs">No trades generated with this strategy/timeframe.</div>';return;}
     // Buy and hold comparison
     var bhReturn=((data[data.length-1].close-data[50].close)/data[50].close)*100;
@@ -3336,7 +3337,7 @@ window.runMultiSim=function(){
   getData.then(function(data){
     if(!data||data.length<60){el.innerHTML='<div class="text-ylw text-xs mt-2">Not enough data</div>';return;}
     var startCap=100000;var riskCfg={maxPositionPct:10,stopLossPct:5,takeProfitPct:10,maxConcurrentPos:5};
-    var feeProf=gv('fee-sel')||'coinbase_adv';
+    var feeProf=mkt==='crypto'?(gv('fee-sel-crypto')||'coinbase_adv'):(gv('fee-sel-stocks')||'alpaca');
     var results={};var stratKeys=['meanReversion','momentum','bollingerBounce'];
     stratKeys.forEach(function(sk){
       if(!Strategies[sk])return;
@@ -3408,7 +3409,7 @@ window.runWalkForward=function(){
   getData.then(function(data){
     if(!data||data.length<100){el.innerHTML='<div class="text-ylw text-xs mt-2">Need 100+ bars for walk-forward (try longer period)</div>';return;}
     var startCap=100000;var riskCfg={maxPositionPct:10,stopLossPct:5,takeProfitPct:10,maxConcurrentPos:5};
-    var feeProf=gv('fee-sel')||'coinbase_adv';
+    var feeProf=mkt==='crypto'?(gv('fee-sel-crypto')||'coinbase_adv'):(gv('fee-sel-stocks')||'alpaca');
     // Split: 70% training, 30% testing
     var splitIdx=Math.floor(data.length*0.7);
     var trainData=data.slice(0,splitIdx);
@@ -3519,8 +3520,9 @@ function prOf(id){
 function chOf(id){var p=prices[id];return p?(p.usd_24h_change||0):0}
 // Get fee profile based on asset market type
 function getFeeProfile(assetId){
-  // Check if asset is crypto or stock
+  // Check if asset is crypto or stock using comprehensive detection
   var isCrypto=CRYPTO.find(function(c){return c.id===assetId})||
+    _cryptoIds.indexOf(assetId)>-1||
     (typeof wl!=='undefined'&&wl.find(function(w){return w.id===assetId&&w.mkt==='crypto'}));
   if(isCrypto)return gv('fee-sel-crypto')||'coinbase_adv';
   return gv('fee-sel-stocks')||'alpaca';
@@ -5790,7 +5792,7 @@ window.mtUpdatePreview=function(){
   var pr=prOf(assetId);if(!pr)return;
   var amt=parseFloat(gv('mt-amount'))||0;if(amt<=0)return;
   var dollarAmt=_mtMode==='dollar'?amt:amt*pr;
-  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var feeProfile=mkt==='crypto'?(gv('fee-sel-crypto')||'coinbase_adv'):(gv('fee-sel-stocks')||'alpaca');
   var a=findA(assetId);var vol=a&&a.vol?a.vol:0.03;
   var cost=calculateTradeCost(dollarAmt,feeProfile,'buy',vol);
   var fbEl=document.getElementById('mt-fee-breakdown');
@@ -5814,7 +5816,7 @@ function showOrderConfirm(side,assetId,dollarAmt,callback){
   var pr=prOf(assetId);if(!pr)return callback();
   var a=findA(assetId);var sym=a?a.sym:assetId;
   var qty=dollarAmt/pr;
-  var feeProfile=gv('fee-sel')||'coinbase_adv';
+  var feeProfile=mkt==='crypto'?(gv('fee-sel-crypto')||'coinbase_adv'):(gv('fee-sel-stocks')||'alpaca');
   var vol=a&&a.vol?a.vol:0.03;
   var cost=calculateTradeCost(dollarAmt,feeProfile,side,vol);
   var overlay=document.getElementById('order-confirm-overlay');
