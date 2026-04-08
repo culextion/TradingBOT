@@ -1685,9 +1685,39 @@ function updateSig(){var el=document.getElementById('c-sig');if(!el)return;
   // Generate REAL signals from market data
   var moves=analyzeMarket();
   if(!moves.length){el.innerHTML=mtfBlock+'<div class="text-t2 text-xs text-center py-4">Analyzing markets... signals will appear as data loads.</div>';return;}
-  el.innerHTML=mtfBlock+moves.map(function(s){
+  // Show trailing buy orders if any
+  var tbHtml='';
+  if(bot._trailingBuys&&bot._trailingBuys.length){
+    tbHtml='<div class="mb-2"><div class="text-t2 font-bold uppercase mb-1" style="font-size:8px;letter-spacing:.5px">Pending Trailing Buys</div>';
+    bot._trailingBuys.forEach(function(tb){
+      var timeLeft=Math.max(0,Math.round((1800000-(Date.now()-tb.created))/60000));
+      tbHtml+='<div style="padding:3px 6px;background:var(--s2);border-left:3px solid var(--ylw);border-radius:3px;margin-bottom:2px;font-size:10px">'+
+        '<div class="flex justify-between"><span class="font-bold text-ylw">'+tb.sym+' LIMIT</span><span class="text-t2">'+timeLeft+'min left</span></div>'+
+        '<div class="text-t2">Buy at $'+fp(tb.targetPrice)+' (1.5% below $'+fp(tb.signalPrice)+')</div></div>';
+    });
+    tbHtml+='</div>';
+  }
+
+  el.innerHTML=mtfBlock+tbHtml+moves.map(function(s){
     var t=s.dir==='buy'?'bull':'bear';
-    return'<div class="sig '+t+'"><div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+s.sym+' — '+s.dir.toUpperCase()+'</span><span class="text-t2" style="font-size:9px">'+s.strat+'</span></div><div class="text-t2 mb-1">'+s.reason+'</div><div class="flex items-center gap-2"><span class="text-t2">Conf:</span><div class="flex-1 bg-s3 rounded-full h-1"><div class="h-1 rounded-full '+(s.conf>70?'bg-grn':'bg-ylw')+'" style="width:'+s.conf+'%"></div></div><span class="font-bold '+(s.conf>70?'text-grn':'text-ylw')+'">'+s.conf+'%</span></div></div>';}).join('');}
+    var confColor=s.conf>=75?'grn':s.conf>=60?'ylw':'t2';
+    // Strategy tag with color coding
+    var stratColors={meanrev:'blu',momentum:'pur',bollinger:'ylw',correlation:'grn',vwap:'blu',divergence:'red',ichimoku:'pur',fibonacci:'ylw',volume:'t2',trend:'grn',levels:'ylw',pattern:'pur'};
+    var stratColor=stratColors[s.strat]||'t2';
+    // Confirmed vs unconfirmed indicator
+    var confirmed=s.reason.indexOf('confirmed')>-1||s.reason.indexOf('bounce')>-1;
+    var confIcon=confirmed?'<span title="Entry confirmed" style="font-size:8px;color:var(--grn)">✓</span>':'';
+    return'<div class="sig '+t+'" style="cursor:pointer" onclick="this.querySelector(\'.sig-detail\').style.display=this.querySelector(\'.sig-detail\').style.display===\'none\'?\'block\':\'none\'">'+
+      '<div class="flex justify-between mb-0.5"><span class="font-bold text-t1">'+s.sym+' '+s.dir.toUpperCase()+' '+confIcon+'</span>'+
+      '<span class="text-'+stratColor+'" style="font-size:9px;background:var(--s3);padding:1px 5px;border-radius:3px">'+s.strat+'</span></div>'+
+      '<div class="text-t2 mb-1" style="font-size:10px">'+s.reason+'</div>'+
+      '<div class="flex items-center gap-2"><span class="text-t2" style="font-size:9px">Confidence:</span><div class="flex-1 bg-s3 rounded-full" style="height:4px"><div class="rounded-full bg-'+confColor+'" style="height:4px;width:'+Math.round(s.conf)+'%;transition:width .3s"></div></div><span class="font-bold text-'+confColor+'" style="font-size:11px">'+Math.round(s.conf)+'%</span></div>'+
+      '<div class="sig-detail" style="display:none;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);font-size:9px;color:var(--t2)">'+
+        'Strategy: '+s.strat+' · Weight: '+(bot.stratWeights[s.strat]||1).toFixed(2)+'x · '+
+        (confirmed?'Entry confirmed ✓':'Awaiting confirmation')+
+        (s.strat==='correlation'?' · Pair divergence trade':'') +
+      '</div></div>';
+  }).join('');}
 
 function updateInd(){var el=document.getElementById('c-ind');if(!el)return;var a=findA(sel)||getAssets()[0];var d=mkt==='crypto'?ohlc[a.id]:stkData[a.id];
   if(!d||d.length<20){el.innerHTML='<div class="text-t2 text-xs text-center py-4">Loading...</div>';return;}
@@ -2672,6 +2702,25 @@ function runBot(){if(!bot.on)return;
     regimeMultiplier=0.5; // Halve position size in bear markets
   }
 
+  // Volatility-adjusted sizing: reduce size in high-vol, increase in low-vol
+  // Uses ATR of the target asset relative to its price
+  var volMultiplier=1.0;
+  function getVolAdjust(assetId){
+    var d=mkt==='crypto'?(ohlcDeep[assetId]||ohlc[assetId]):stkData[assetId];
+    if(!d||d.length<15)return 1.0;
+    // Calculate ATR(14) as % of price
+    var atr=0;
+    for(var ai=d.length-14;ai<d.length;ai++){
+      var hi=d[ai].high||d[ai].close,lo=d[ai].low||d[ai].close,pc=d[ai-1]?d[ai-1].close:d[ai].close;
+      atr+=Math.max(hi-lo,Math.abs(hi-pc),Math.abs(lo-pc));
+    }
+    atr/=14;
+    var atrPct=d[d.length-1].close>0?(atr/d[d.length-1].close)*100:2;
+    // Target 2% ATR: if ATR is 4%, halve position; if ATR is 1%, double position
+    var adj=Math.max(0.3,Math.min(2.0,2.0/Math.max(0.5,atrPct)));
+    return adj;
+  }
+
   // Stop/trail check — ALWAYS run even in recovery mode (protective sells)
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
   var trail=parseFloat(gv('r-trail')||3)/100;
@@ -2855,6 +2904,35 @@ function runBot(){if(!bot.on)return;
     });
   }
 
+  // ---- Trailing Buy: check pending limit orders ----
+  if(!bot._trailingBuys)bot._trailingBuys=[];
+  // Check existing trailing buy orders
+  bot._trailingBuys=bot._trailingBuys.filter(function(tb){
+    var pr=prOf(tb.id);if(!pr)return true; // keep if no price yet
+    // Expired (30 min timeout)
+    if(Date.now()-tb.created>1800000){blog('Trailing buy expired: '+tb.sym+' — price never reached $'+fp(tb.targetPrice),'info');return false;}
+    // Price hit target — execute buy
+    if(pr<=tb.targetPrice){
+      blog('TRAILING BUY FILLED: '+tb.sym+' at $'+fp(pr)+' (target was $'+fp(tb.targetPrice)+', saved '+((1-pr/tb.signalPrice)*100).toFixed(1)+'%)','trade');
+      var kr=calcKellySize(tb.conf);
+      buyA(tb.id,kr.size,'Trailing buy filled at $'+fp(pr)+' (signal at $'+fp(tb.signalPrice)+', conf: '+Math.round(tb.conf)+'%, strategy: '+tb.strat+')');
+      return false;
+    }
+    return true;
+  });
+
+  // Create new trailing buys for high-confidence signals (place order 1.5% below)
+  var trailBuyPct=0.015; // Buy 1.5% below current price
+  moves.filter(function(m){return m.dir==='buy'&&m.conf>=75}).forEach(function(m){
+    // Don't create if already have a trailing buy for this asset or already own it
+    if(bot._trailingBuys.find(function(tb){return tb.id===m.id}))return;
+    if(account.positions.find(function(p){return p.id===m.id}))return;
+    var pr=prOf(m.id);if(!pr)return;
+    var target=pr*(1-trailBuyPct);
+    bot._trailingBuys.push({id:m.id,sym:m.sym,signalPrice:pr,targetPrice:target,conf:m.conf,strat:m.strat,created:Date.now()});
+    blog('TRAILING BUY SET: '+m.sym+' — limit order at $'+fp(target)+' (1.5% below $'+fp(pr)+'). Expires in 30min.','info');
+  });
+
   if(bot.strat==='hybrid'){
     var buys={},bestSig={};
     moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
@@ -2869,9 +2947,9 @@ function runBot(){if(!bot.on)return;
       if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago','warning');continue;}
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
       // Batch 8: Per-signal position sizing
-      var kr=calcKellySize(m.conf);buyAmt=kr.size*regimeMultiplier;
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+')]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
-      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+')');
+      var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+', vol adj: '+va.toFixed(2)+'x)]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
+      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[id]=now;}
       return;}
   } else {
@@ -2881,9 +2959,9 @@ function runBot(){if(!bot.on)return;
     stMoves.sort(function(a,b){return(_momScores[b.id]||50)-(_momScores[a.id]||50)});
     var m=stMoves[0];
     if(m){
-      var kr=calcKellySize(m.conf);buyAmt=kr.size*regimeMultiplier;
-      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+')]','trade');
-      var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+')');
+      var kr=calcKellySize(m.conf);var va=getVolAdjust(m.id);buyAmt=kr.size*regimeMultiplier*va;
+      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+', vol: '+va.toFixed(2)+'x)]','trade');
+      var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[m.id]=now;}
     }
   }
