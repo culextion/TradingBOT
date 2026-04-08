@@ -3625,6 +3625,11 @@ window.toggleTheme=function(){
 // ===================== STATE PERSISTENCE =====================
 function saveState(){
   try{
+    // Save last known prices so portfolio value is accurate immediately on reload
+    var priceSnapshot={};
+    for(var k in prices){if(prices[k]&&prices[k].usd)priceSnapshot[k]={usd:prices[k].usd,usd_24h_change:prices[k].usd_24h_change||0};}
+    localStorage.setItem('ct_prices',JSON.stringify(priceSnapshot));
+    localStorage.setItem('ct_portfolio_value',portVal().toFixed(2));
     localStorage.setItem('ct_account',JSON.stringify({cash:account.cash,start:account.start,positions:account.positions,trades:account.trades.slice(0,50),dayPnL:account.dayPnL,fees:account.fees}));
     localStorage.setItem('ct_bot',JSON.stringify({on:bot.on,strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20),
       stratWeights:bot.stratWeights,consecutiveLosses:bot.consecutiveLosses,cooldowns:bot.cooldowns}));
@@ -5633,6 +5638,9 @@ function checkDailyReportTime(){
 }
 
 // ===================== INIT =====================
+// Restore cached prices immediately so portfolio value is correct before API loads
+try{var cp=localStorage.getItem('ct_prices');if(cp){var cached=JSON.parse(cp);for(var k in cached){if(!prices[k])prices[k]=cached[k];}console.log('Restored '+Object.keys(cached).length+' cached prices');}}catch(e){}
+
 ConnGuard.init();
 // Wire ConnGuard events to bot log
 ConnGuard.onEvent(function(type,msg){
