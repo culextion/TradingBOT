@@ -330,9 +330,9 @@ select.inp{appearance:auto}
       <div class="flex items-center justify-between"><span class="text-t2 text-xs font-bold uppercase">Status</span><span id="bot-status" class="font-bold text-xs text-red">STOPPED</span></div>
       <div>
         <label class="text-t2 block mb-1" style="font-size:9px">Trading Mode</label>
-        <select id="trade-mode" class="inp" style="font-size:11px">
+        <select id="trade-mode" class="inp" style="font-size:11px" onchange="onTradeModeChange(this.value)">
           <option value="paper" selected>Paper Trading (Simulation)</option>
-          <option value="live" disabled>Live Trading (Connect account in Settings)</option>
+          <option value="live" id="live-mode-opt" disabled>Live Trading (Connect account in Settings)</option>
         </select>
       </div>
       <div class="flex gap-2">
@@ -736,10 +736,12 @@ select.inp{appearance:auto}
       <div class="bg-s2 rounded-lg p-3">
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center gap-2"><span class="font-bold" style="font-size:var(--fs-md)">Coinbase</span><span class="text-t2" style="font-size:var(--fs-xs)">Crypto</span></div>
-          <span class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
+          <span id="cb-status" class="text-ylw font-bold" style="font-size:var(--fs-xs)">Not Connected</span>
         </div>
         <p class="text-t2 mb-2" style="font-size:var(--fs-xs)">OAuth connection — securely links your Coinbase account for automated crypto trading.</p>
-        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" disabled title="Coming soon">Connect Coinbase</button>
+        <div class="mb-2"><label class="text-t2" style="font-size:var(--fs-xs)">Coinbase OAuth Client ID</label><input id="cb-client-id" class="inp" placeholder="Your Coinbase API app Client ID" style="font-size:var(--fs-sm)" onchange="CoinbaseAuth.clientId=this.value;localStorage.setItem('ct_cb_clientid',this.value)"/></div>
+        <button class="btn btn-b w-full" style="font-size:var(--fs-sm)" onclick="CoinbaseAuth.authorize()">Connect Coinbase</button>
+        <div id="cb-portfolio" class="mt-2" style="font-size:var(--fs-xs)"></div>
       </div>
 
       <div class="bg-s2 rounded-lg p-3">
@@ -2025,6 +2027,53 @@ function analyzeMarket(){
     // Pattern recognition (Batch 3 Task 2)
     detectPatterns(a,d,moves);
   });
+
+  // ---- Multi-Asset Correlation Scanning ----
+  // Compare each pair of watchlist assets for divergence opportunities
+  if(wla.length>=2){
+    for(var ci=0;ci<Math.min(wla.length,8);ci++){
+      for(var cj=ci+1;cj<Math.min(wla.length,8);cj++){
+        var a1=wla[ci],a2=wla[cj];
+        var ch1=chOf(a1.id),ch2=chOf(a2.id);
+        // Look up known correlation or estimate from price movement
+        var corrKey=a1.sym+'-'+a2.sym,corrKeyR=a2.sym+'-'+a1.sym;
+        var corrVal=CORR_C[corrKey]||CORR_C[corrKeyR]||CORR_S[corrKey]||CORR_S[corrKeyR]||0;
+        if(corrVal<0.5)continue; // Only care about correlated pairs
+        var divergence=Math.abs(ch1-ch2);
+        if(divergence>2){ // >2% divergence between correlated assets
+          var lagging=ch1<ch2?a1:a2;
+          var leading=ch1<ch2?a2:a1;
+          var hasLag=account.positions.find(function(p){return p.id===lagging.id});
+          if(!hasLag){
+            moves.push({sym:lagging.sym,id:lagging.id,dir:'buy',
+              reason:lagging.sym+' lagging '+leading.sym+' by '+divergence.toFixed(1)+'% (corr: '+corrVal.toFixed(2)+') — mean reversion expected',
+              conf:Math.min(85,65+divergence*2),strat:'correlation'});
+          }
+        }
+      }
+    }
+  }
+
+  // ---- News Sentiment Boost ----
+  // If we have news with sentiment, boost/reduce confidence for mentioned assets
+  if(_newsCache.length){
+    _newsCache.slice(0,10).forEach(function(n){
+      if(!n.sentiment||n.sentiment===0)return;
+      wla.forEach(function(a){
+        var title=(n.title||'').toLowerCase();
+        if(title.indexOf(a.sym.toLowerCase())>-1||title.indexOf(a.name.toLowerCase())>-1){
+          moves.forEach(function(m){
+            if(m.id===a.id){
+              if(n.sentiment>0&&m.dir==='buy')m.conf=Math.min(99,m.conf+3);
+              if(n.sentiment<0&&m.dir==='sell')m.conf=Math.min(99,m.conf+3);
+              if(n.sentiment>0&&m.dir==='sell')m.conf=Math.max(1,m.conf-3);
+              if(n.sentiment<0&&m.dir==='buy')m.conf=Math.max(1,m.conf-3);
+            }
+          });
+        }
+      });
+    });
+  }
 
   // Apply adaptive confidence weights (Task 3b)
   moves.forEach(function(m){
@@ -5078,7 +5127,199 @@ function initScanner(){
   setInterval(function(){fetchTrending().then(function(){renderTrending()})},300000);
   // Refresh top movers every 5 minutes
   setInterval(function(){fetchTopMovers()},300000);
+  // Check for new Coinbase listings every 30 minutes
+  setInterval(checkNewListings,1800000);
 }
+
+// ===================== COINBASE NEW LISTING DETECTION =====================
+var _knownCoinbaseSyms=null;
+
+function checkNewListings(){
+  if(!_knownCoinbaseSyms){
+    // First run — snapshot current list
+    _knownCoinbaseSyms=new Set(coinbaseAssets.map(function(a){return a.sym}));
+    return;
+  }
+  var prevCount=_knownCoinbaseSyms.size;
+  fetch('https://api.exchange.coinbase.com/products')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      var current=d.filter(function(p){return p.quote_currency==='USD'&&p.status==='online'});
+      var newListings=[];
+      current.forEach(function(p){
+        if(!_knownCoinbaseSyms.has(p.base_currency)){
+          newListings.push({sym:p.base_currency,pair:p.id});
+          _knownCoinbaseSyms.add(p.base_currency);
+        }
+      });
+      if(newListings.length){
+        // Update the cached asset list
+        coinbaseAssets=current.map(function(p){return{id:p.base_currency.toLowerCase(),sym:p.base_currency,name:p.base_currency,pair:p.id,status:p.status}});
+        coinbaseLastFetch=Date.now();
+        // Alert the user
+        newListings.forEach(function(nl){
+          var msg='NEW COINBASE LISTING: '+nl.sym+' ('+nl.pair+') — new listings often see 20-50% price action in first 48h';
+          blog(msg,'trade');
+          showToast('New Coinbase listing: '+nl.sym,'info');
+          addTickerNews('NEW: '+nl.sym+' listed on Coinbase');
+          // Auto-add to watchlist if in Coinbase scan mode
+          if(bot.scanMode==='coinbase'){
+            addWL(nl.sym.toLowerCase(),nl.sym,nl.sym+' (New Listing)');
+            blog('Auto-added '+nl.sym+' to watchlist (Coinbase scan mode)','info');
+          }
+        });
+        var countEl=document.getElementById('coinbase-count');
+        if(countEl)countEl.textContent=coinbaseAssets.length+' Coinbase USD pairs ('+newListings.length+' new!)';
+      }
+    }).catch(function(e){console.warn('Listing check failed:',e)});
+}
+
+// ===================== COINBASE OAUTH INTEGRATION PREP =====================
+var CoinbaseAuth={
+  clientId:null,        // Set in Settings page when user registers their app
+  redirectUri:null,     // Set to Vercel deployment URL + /auth/callback
+  connected:false,
+  accessToken:null,
+  refreshToken:null,
+  tokenExpiry:0,
+  portfolio:[],         // Real Coinbase portfolio
+
+  // Step 1: Initiate OAuth flow (opens Coinbase authorization page)
+  authorize:function(){
+    if(!this.clientId){
+      showToast('Set your Coinbase API Client ID in Settings first','warn');
+      return;
+    }
+    this.redirectUri=window.location.origin+'/auth/coinbase/callback';
+    var scopes='wallet:accounts:read,wallet:buys:create,wallet:sells:create,wallet:transactions:read';
+    var authUrl='https://www.coinbase.com/oauth/authorize?response_type=code'+
+      '&client_id='+encodeURIComponent(this.clientId)+
+      '&redirect_uri='+encodeURIComponent(this.redirectUri)+
+      '&scope='+encodeURIComponent(scopes)+
+      '&state='+Math.random().toString(36).substring(7);
+    // Store state for verification
+    localStorage.setItem('ct_cb_oauth_state',authUrl.split('state=')[1]);
+    window.open(authUrl,'_blank','width=500,height=700');
+    showToast('Complete authorization in the Coinbase popup window','info');
+  },
+
+  // Step 2: Exchange code for token (must happen server-side via Supabase Edge Function)
+  // This would be called from the callback page
+  exchangeCode:async function(code){
+    if(!SB.user){showToast('Sign in to CulexTrade first','warn');return;}
+    try{
+      // Call Supabase Edge Function to exchange code (keeps client_secret server-side)
+      var resp=await fetch(SUPABASE_URL+'/functions/v1/coinbase-auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+(await getAuthToken())},
+        body:JSON.stringify({code:code,redirect_uri:this.redirectUri,user_id:SB.user.id})
+      });
+      var data=await resp.json();
+      if(data.access_token){
+        this.accessToken=data.access_token;
+        this.refreshToken=data.refresh_token;
+        this.tokenExpiry=Date.now()+(data.expires_in||3600)*1000;
+        this.connected=true;
+        showToast('Coinbase connected successfully!','info');
+        blog('Coinbase account linked — live trading enabled','trade');
+        // Save connection to Supabase
+        if(SB.user)await SB.client.from('exchange_connections').upsert({
+          user_id:SB.user.id,exchange:'coinbase',is_active:true,is_paper:false,connected_at:new Date().toISOString()
+        },{onConflict:'user_id,exchange'});
+        this.fetchPortfolio();
+      }else{
+        showToast('Coinbase auth failed: '+(data.error||'unknown error'),'warn');
+      }
+    }catch(e){console.error('Coinbase auth error:',e);showToast('Connection failed','warn');}
+  },
+
+  // Step 3: Fetch real portfolio
+  fetchPortfolio:async function(){
+    if(!this.accessToken)return;
+    try{
+      var resp=await fetch('https://api.coinbase.com/v2/accounts',{
+        headers:{'Authorization':'Bearer '+this.accessToken,'CB-VERSION':'2024-01-01'}
+      });
+      var data=await resp.json();
+      if(data.data){
+        this.portfolio=data.data.filter(function(a){return parseFloat(a.balance.amount)>0}).map(function(a){
+          return{id:a.currency.code.toLowerCase(),sym:a.currency.code,name:a.currency.name,
+            balance:parseFloat(a.balance.amount),native:parseFloat(a.native_balance.amount)};
+        });
+        console.log('Coinbase portfolio:',this.portfolio.length,'assets');
+      }
+    }catch(e){console.error('Portfolio fetch error:',e);}
+  },
+
+  // Execute a real buy order (LIVE TRADING)
+  buy:async function(symbol,amount){
+    if(!this.accessToken||!this.connected){showToast('Coinbase not connected','warn');return null;}
+    // Find account ID for this currency
+    var acct=this.portfolio.find(function(a){return a.sym===symbol});
+    if(!acct){showToast('No Coinbase account for '+symbol,'warn');return null;}
+    try{
+      var resp=await fetch('https://api.coinbase.com/v2/accounts/'+acct.id+'/buys',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+this.accessToken,'Content-Type':'application/json','CB-VERSION':'2024-01-01'},
+        body:JSON.stringify({amount:amount.toString(),currency:'USD',commit:true})
+      });
+      return await resp.json();
+    }catch(e){console.error('Buy error:',e);return null;}
+  },
+
+  // Execute a real sell order (LIVE TRADING)
+  sell:async function(symbol,amount){
+    if(!this.accessToken||!this.connected){showToast('Coinbase not connected','warn');return null;}
+    var acct=this.portfolio.find(function(a){return a.sym===symbol});
+    if(!acct){return null;}
+    try{
+      var resp=await fetch('https://api.coinbase.com/v2/accounts/'+acct.id+'/sells',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+this.accessToken,'Content-Type':'application/json','CB-VERSION':'2024-01-01'},
+        body:JSON.stringify({amount:amount.toString(),currency:symbol,commit:true})
+      });
+      return await resp.json();
+    }catch(e){console.error('Sell error:',e);return null;}
+  },
+
+  getStatus:function(){
+    if(this.connected)return{text:'Connected',color:'text-grn'};
+    return{text:'Not Connected',color:'text-ylw'};
+  },
+
+  // Update UI elements reflecting connection status
+  updateUI:function(){
+    var st=this.getStatus();
+    var stEl=document.getElementById('cb-status');if(stEl){stEl.textContent=st.text;stEl.className=st.color+' font-bold';stEl.style.fontSize='var(--fs-xs)';}
+    var liveOpt=document.getElementById('live-mode-opt');
+    if(liveOpt){liveOpt.disabled=!this.connected;liveOpt.textContent=this.connected?'Live Trading (Coinbase Connected)':'Live Trading (Connect account in Settings)';}
+    // Show portfolio in settings
+    if(this.portfolio.length){
+      var pEl=document.getElementById('cb-portfolio');
+      if(pEl){pEl.innerHTML='<div class="text-t2 font-bold mb-1" style="font-size:9px">COINBASE PORTFOLIO</div>'+
+        this.portfolio.map(function(a){return'<div class="flex justify-between" style="font-size:var(--fs-xs)"><span class="text-t1 font-bold">'+a.sym+'</span><span class="text-t2">'+a.balance.toFixed(4)+' ($'+fp(a.native)+')</span></div>'}).join('');}
+    }
+  }
+};
+
+// Trade mode handler
+window.onTradeModeChange=function(mode){
+  if(mode==='live'){
+    if(!CoinbaseAuth.connected){
+      showToast('Connect your Coinbase account in Settings first','warn');
+      document.getElementById('trade-mode').value='paper';
+      return;
+    }
+    if(!confirm('⚠️ LIVE TRADING MODE\n\nThis will execute REAL trades with REAL money on your connected Coinbase account.\n\nAre you absolutely sure?')){
+      document.getElementById('trade-mode').value='paper';
+      return;
+    }
+    blog('SWITCHED TO LIVE TRADING MODE — real money trades enabled','warning');
+    showToast('LIVE MODE — real trades will execute on Coinbase','warn');
+  }else{
+    blog('Switched to paper trading mode','info');
+  }
+};
 
 // ===================== BOT STATUS WIDGET (Batch 4 Task 4) =====================
 var _bwOpen=false;
@@ -6152,6 +6393,8 @@ onStratChange();
 loadBotMarkets();
 initTicker();
 initScanner();
+// Restore Coinbase OAuth client ID
+try{var cbId=localStorage.getItem('ct_cb_clientid');if(cbId){CoinbaseAuth.clientId=cbId;var cbInput=document.getElementById('cb-client-id');if(cbInput)cbInput.value=cbId;}}catch(e){}
 loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
 // Fetch prices for ALL held positions (cross-market) on load and every 30s
