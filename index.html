@@ -2646,7 +2646,9 @@ function updateBotPerf(){
   }
 }
 
+var _justBoughtThisTick={}; // Track buys made in current tick to prevent same-tick sell
 function runBot(){if(!bot.on)return;
+  _justBoughtThisTick={}; // Reset at start of each tick
   bot.tickCount++;
 
   // Check if bot is enabled for current market
@@ -2722,7 +2724,7 @@ function runBot(){if(!bot.on)return;
   }
 
   // Minimum hold time: don't sell within 5 minutes of buying (prevents buy-sell death loop)
-  var MIN_HOLD_MS=300000; // 5 minutes
+  var MIN_HOLD_MS=900000; // 15 minutes — prevent quick flip losses
 
   // Stop/trail check — ALWAYS run even in recovery mode (protective sells)
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
@@ -2730,11 +2732,16 @@ function runBot(){if(!bot.on)return;
   // Tighten stops in bearish regime (Task 3c)
   if(regime.bearish){sl=sl*0.7;trail=trail*0.7;}
   account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
+    // NEVER sell something we just bought this tick
+    if(_justBoughtThisTick[pos.id]){return;}
     var holdTime=Date.now()-(pos.entryTime||pos._buyTs||0);
     var isNewPosition=holdTime<MIN_HOLD_MS;
-    // Skip non-emergency sells on positions held less than 5 minutes
-    // ONLY stop-loss is allowed on new positions (emergency protection)
-    if(isNewPosition&&pct>-sl){return;} // Not at stop-loss level — skip, let it breathe
+    // Skip non-emergency sells on positions held less than 15 minutes
+    // ONLY hard stop-loss is allowed on new positions (emergency protection)
+    if(isNewPosition&&pct>-sl){
+      if(bot.tickCount%6===0)blog('HOLD: '+pos.sym+' protected — '+Math.round(holdTime/60000)+'min of '+Math.round(MIN_HOLD_MS/60000)+'min hold (P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(2))+'%)','info');
+      return;
+    }
     if(!pos.highWater||pr>pos.highWater)pos.highWater=pr;
     var trailPct=pos.highWater?(pr-pos.highWater)/pos.highWater:0;
     if(trail>0&&pos.highWater&&pct>0&&trailPct<=-trail){
@@ -2769,9 +2776,10 @@ function runBot(){if(!bot.on)return;
     var _minProfitPct=Math.min(2,tp*100)/100; // Min 2% or TP setting, whichever is lower
     account.positions.slice().forEach(function(pos){
       var pr=prOf(pos.id);if(!pr)return;
-      // MINIMUM HOLD TIME: Don't signal-sell within 5 minutes of buying
+      // NEVER sell something bought this tick or within hold period
+      if(_justBoughtThisTick[pos.id]){return;}
       var holdTime=Date.now()-(pos.entryTime||pos._buyTs||0);
-      if(holdTime<MIN_HOLD_MS){return;} // Too new — let it breathe
+      if(holdTime<MIN_HOLD_MS){return;} // Too new — let it breathe (15 min minimum)
       var pct=(pr-pos.avgPrice)/pos.avgPrice;
       var pnlAmt=pos.qty*pr-pos.qty*pos.avgPrice;
       // Get all sell signals for this position
@@ -2960,6 +2968,7 @@ function runBot(){if(!bot.on)return;
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
       blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+', vol adj: '+va.toFixed(2)+'x)]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
+      _justBoughtThisTick[id]=true;
       var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[id]=now;}
       return;}
@@ -2971,6 +2980,7 @@ function runBot(){if(!bot.on)return;
     var m=stMoves[0];
     if(m){
       var kr=calcKellySize(m.conf);var va=getVolAdjust(m.id);buyAmt=kr.size*regimeMultiplier*va;
+      _justBoughtThisTick[m.id]=true;
       blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+', vol: '+va.toFixed(2)+'x)]','trade');
       var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[m.id]=now;}
