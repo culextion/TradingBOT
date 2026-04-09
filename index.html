@@ -2721,12 +2721,20 @@ function runBot(){if(!bot.on)return;
     return adj;
   }
 
+  // Minimum hold time: don't sell within 5 minutes of buying (prevents buy-sell death loop)
+  var MIN_HOLD_MS=300000; // 5 minutes
+
   // Stop/trail check — ALWAYS run even in recovery mode (protective sells)
   var sl=parseFloat(gv('r-sl')||5)/100,tp=parseFloat(gv('r-tp')||10)/100;
   var trail=parseFloat(gv('r-trail')||3)/100;
   // Tighten stops in bearish regime (Task 3c)
   if(regime.bearish){sl=sl*0.7;trail=trail*0.7;}
   account.positions.slice().forEach(function(pos){var pr=prOf(pos.id);if(!pr)return;var pct=(pr-pos.avgPrice)/pos.avgPrice;
+    var holdTime=Date.now()-(pos.entryTime||pos._buyTs||0);
+    var isNewPosition=holdTime<MIN_HOLD_MS;
+    // Skip non-emergency sells on positions held less than 5 minutes
+    // ONLY stop-loss is allowed on new positions (emergency protection)
+    if(isNewPosition&&pct>-sl){return;} // Not at stop-loss level — skip, let it breathe
     if(!pos.highWater||pr>pos.highWater)pos.highWater=pr;
     var trailPct=pos.highWater?(pr-pos.highWater)/pos.highWater:0;
     if(trail>0&&pos.highWater&&pct>0&&trailPct<=-trail){
@@ -2761,6 +2769,9 @@ function runBot(){if(!bot.on)return;
     var _minProfitPct=Math.min(2,tp*100)/100; // Min 2% or TP setting, whichever is lower
     account.positions.slice().forEach(function(pos){
       var pr=prOf(pos.id);if(!pr)return;
+      // MINIMUM HOLD TIME: Don't signal-sell within 5 minutes of buying
+      var holdTime=Date.now()-(pos.entryTime||pos._buyTs||0);
+      if(holdTime<MIN_HOLD_MS){return;} // Too new — let it breathe
       var pct=(pr-pos.avgPrice)/pos.avgPrice;
       var pnlAmt=pos.qty*pr-pos.qty*pos.avgPrice;
       // Get all sell signals for this position
@@ -3036,6 +3047,83 @@ function blog(msg,logType){
     return'<div class="text-xs mb-1" style="border-left:2px solid '+c+';padding-left:6px"><span class="text-t2" style="font-size:9px">'+l.t+'</span> <span class="text-t1">'+l.m+'</span></div>';
   }).join('');
 }
+
+// ===================== TRADE LEARNING SYSTEM =====================
+// Records trade outcomes and adjusts bot behavior based on what works/fails
+var _tradeJournal=[]; // [{sym, strat, entryPrice, exitPrice, pnl, holdTime, reason, exitReason, marketConditions}]
+
+function journalTrade(buyTrade, sellTrade){
+  if(!buyTrade||!sellTrade)return;
+  var holdTime=sellTrade.ts&&buyTrade.ts?(sellTrade.ts-buyTrade.ts):0;
+  var entry={
+    sym:buyTrade.sym, strat:extractStrategy(buyTrade.reason),
+    entryPrice:buyTrade.price, exitPrice:sellTrade.price,
+    pnl:sellTrade.pnl||0, pnlPct:buyTrade.price?((sellTrade.price-buyTrade.price)/buyTrade.price*100):0,
+    holdTimeMin:Math.round(holdTime/60000),
+    entryReason:buyTrade.reason||'unknown',
+    exitReason:sellTrade.reason||'unknown',
+    fees:(buyTrade.fees||0)+(sellTrade.fees||0),
+    netPnl:(sellTrade.pnl||0)-(buyTrade.fees||0),
+    ts:Date.now(),
+    wasProfitable:(sellTrade.pnl||0)>0,
+    wasQuickFlip:holdTime<300000, // <5 min
+  };
+  _tradeJournal.unshift(entry);
+  if(_tradeJournal.length>100)_tradeJournal.length=100;
+
+  // Save to localStorage for persistence
+  try{localStorage.setItem('ct_trade_journal',JSON.stringify(_tradeJournal.slice(0,50)));}catch(e){}
+
+  // LEARNING: Adjust strategy weights based on outcome
+  var strat=entry.strat;
+  if(strat&&bot.stratWeights[strat]!==undefined){
+    if(entry.wasProfitable){
+      // Reward: increase weight slightly
+      bot.stratWeights[strat]=Math.min(1.5,bot.stratWeights[strat]+0.03);
+    }else{
+      // Penalize: decrease weight more aggressively for losses
+      bot.stratWeights[strat]=Math.max(0.3,bot.stratWeights[strat]-0.06);
+    }
+    // Extra penalty for quick-flip losses (the worst kind of trade)
+    if(entry.wasQuickFlip&&!entry.wasProfitable){
+      bot.stratWeights[strat]=Math.max(0.3,bot.stratWeights[strat]-0.1);
+      blog('LEARNING: '+strat+' penalized — quick flip loss on '+entry.sym+' (held '+entry.holdTimeMin+'min, lost $'+fp(Math.abs(entry.pnl))+')','warning');
+    }
+    // Log learning
+    if(bot.tickCount%10===0){
+      var weights=Object.keys(bot.stratWeights).filter(function(k){return bot.stratWeights[k]!==1.0}).map(function(k){return k+'='+bot.stratWeights[k].toFixed(2)}).join(', ');
+      if(weights)blog('Strategy weights: '+weights,'info');
+    }
+  }
+
+  // Log the journal entry as a detailed trade review
+  var emoji=entry.wasProfitable?'✓':'✗';
+  var holdStr=entry.holdTimeMin<60?entry.holdTimeMin+'min':Math.round(entry.holdTimeMin/60)+'h '+entry.holdTimeMin%60+'min';
+  blog(emoji+' TRADE REVIEW: '+entry.sym+' '+entry.strat+' | Entry: $'+fp(entry.entryPrice)+' → Exit: $'+fp(entry.exitPrice)+
+    ' | P&L: '+(entry.pnl>=0?'+':'')+('$'+fp(Math.abs(entry.pnl)))+' ('+entry.pnlPct.toFixed(2)+'%)'+
+    ' | Held: '+holdStr+' | Fees: $'+fp(entry.fees)+
+    ' | Exit: '+entry.exitReason.substring(0,60),
+    entry.wasProfitable?'info':'warning');
+}
+
+function extractStrategy(reason){
+  if(!reason)return'hybrid';
+  var m=reason.match(/strategy:\s*(\w+)/);if(m)return m[1];
+  m=reason.match(/\((\w+)\)$/);if(m)return m[1];
+  if(reason.indexOf('DCA')===0)return'dca';
+  if(reason.indexOf('VWAP')>-1)return'vwap';
+  if(reason.indexOf('Ichimoku')>-1)return'ichimoku';
+  if(reason.indexOf('Fibonacci')>-1)return'fibonacci';
+  if(reason.indexOf('RSI')>-1)return'meanrev';
+  if(reason.indexOf('SMA')>-1||reason.indexOf('momentum')>-1)return'momentum';
+  if(reason.indexOf('Bollinger')>-1)return'bollinger';
+  if(reason.indexOf('divergence')>-1)return'divergence';
+  if(reason.indexOf('corr')>-1)return'correlation';
+  return'hybrid';
+}
+
+// Load journal from localStorage
+try{var tj=localStorage.getItem('ct_trade_journal');if(tj)_tradeJournal=JSON.parse(tj);}catch(e){}
 
 // ===================== AI TRADE SUMMARY (Batch 7 Task 3) =====================
 var _botStartedAt=0;
@@ -3999,6 +4087,11 @@ window.sellA=function(id,qty,reason){var t=_origSellA(id,qty,reason);if(t){
   if(SB.user){SB.saveTrade(t);SB.updateCash(account.cash);SB.savePositions(account.positions);
   // Task 1b: Update strategy performance on SELL
   recordStrategyExit(t);}
+  // Trade learning: find matching BUY and record complete trade outcome
+  if(t.type==='SELL'&&t.pnl!==undefined){
+    var matchBuy=account.trades.find(function(bt){return bt.type==='BUY'&&bt.id===t.id&&bt!==t});
+    journalTrade(matchBuy,t);
+  }
 }return t;};
 
 // ===================== STRATEGY PERFORMANCE TRACKER (Batch 5 Task 1) =====================
