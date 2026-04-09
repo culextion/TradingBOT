@@ -968,6 +968,7 @@ select.inp{appearance:auto}
 <script src="js/risk.js"></script>
 <script src="js/simulator.js"></script>
 <script src="js/connectivity.js"></script>
+<script src="js/engines.js"></script>
 <script src="js/supabase-client.js"></script>
 <script>
 (function(){
@@ -2976,6 +2977,22 @@ function runBot(){if(!bot.on)return;
     blog('TRAILING BUY SET: '+m.sym+' — limit order at $'+fp(target)+' (1.5% below $'+fp(pr)+'). Expires in 30min.','info');
   });
 
+  // ===== MULTI-ENGINE DECISION BOARD =====
+  // Before any buy, run all 5 engines for consensus vote
+  var _engineResults={};
+  getWL().forEach(function(a){
+    if(account.positions.find(function(p){return p.id===a.id}))return; // Skip assets we already hold
+    var d=mkt==='crypto'?(ohlcDeep[a.id]||ohlc[a.id]):stkData[a.id];
+    if(!d||d.length<20)return;
+    var verdict=DecisionBoard.evaluate(a.id,d,prices,account.positions,regime,_newsCache);
+    _engineResults[a.id]=verdict;
+    // Log engine decisions periodically
+    if(bot.tickCount%3===0&&verdict.decision!=='HOLD'){
+      var engLog=verdict.engines.map(function(e){return e.engine+'='+e.signal+'('+e.conf+'%)'}).join(' ');
+      blog('ENGINES ['+a.sym+']: '+verdict.decision+' '+verdict.consensus+' | '+engLog,'info');
+    }
+  });
+
   if(bot.strat==='hybrid'){
     var buys={},bestSig={};
     moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
@@ -3008,7 +3025,14 @@ function runBot(){if(!bot.on)return;
         }
         blog('TREND OVERRIDE: '+bestSig[id].sym+' — downtrending but strong signal ('+buys[id]+' strategies, '+Math.round(m.conf)+'% conf)','info');
       }
+      // MULTI-ENGINE GATE: DecisionBoard must also approve
+      var engineVerdict=_engineResults[id];
+      if(engineVerdict&&engineVerdict.decision!=='BUY'){
+        blog('ENGINE BLOCK: '+bestSig[id].sym+' — DecisionBoard says '+engineVerdict.decision+' ('+engineVerdict.consensus+')','warning');
+        continue;
+      }
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
+      if(engineVerdict)reason+=' [Engines: '+engineVerdict.consensus+']';
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
       // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
@@ -4179,6 +4203,11 @@ window.sellA=function(id,qty,reason){var t=_origSellA(id,qty,reason);if(t){
   if(t.type==='SELL'&&t.pnl!==undefined){
     var matchBuy=account.trades.find(function(bt){return bt.type==='BUY'&&bt.id===t.id&&bt!==t});
     journalTrade(matchBuy,t);
+    // Feed result to Memory Engine for learning
+    if(typeof MemoryEngine!=='undefined'){
+      var strat=extractStrategy(t.reason);
+      MemoryEngine.recordResult(t.id,t.pnl>0,0,strat);
+    }
   }
 }return t;};
 
