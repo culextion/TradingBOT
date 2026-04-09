@@ -1007,6 +1007,7 @@ var wl=[];// custom watchlist
 var account={cash:100000,start:100000,positions:[],trades:[],dayPnL:0,fees:0};
 var bot={on:false,strat:null,iv:null,trades:0,pnl:0,logs:[],
   cooldowns:{},                                          // Task 3a: {assetId: lastTradeTimestamp}
+  lossMemory:{},                                         // {assetId: {ts, reason, pnlPct}} — tracks recent stop-loss exits
   stratWeights:{meanrev:1.0,momentum:1.0,bollinger:1.0,correlation:1.0,volume:1.0,hybrid:1.0,levels:1.0,pattern:1.0,trend:1.0,vwap:1.0,divergence:1.0,ichimoku:1.0,fibonacci:1.0},
   consecutiveLosses:0,                                   // Task 3d
   pausedUntil:0,                                         // Task 3d
@@ -2311,6 +2312,13 @@ window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){
   else{bot.consecutiveLosses=0;}
   // Task 3a: Record cooldown for this asset
   bot.cooldowns[id]=Date.now();
+  // Loss memory: track assets that were sold at a loss (stop-loss or signal-sell-at-loss)
+  // These get a much longer cooldown to prevent the buy-sell death loop
+  if(pnl<0){
+    var lossCooldownMs=sellType==='stop-loss'?1800000:1200000; // 30min for stop-loss, 20min for other losses
+    bot.lossMemory[id]={ts:Date.now(),reason:sellType,pnlPct:pnlPct,cooldownUntil:Date.now()+lossCooldownMs};
+    blog('LOSS MEMORY: '+sym+' flagged — '+(lossCooldownMs/60000)+'min extended cooldown after '+sellType+' ('+pnlPct.toFixed(1)+'% loss). Requires 2+ strategy agreement to re-enter.','warning');
+  }
   updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;};
 
 function portVal(){var v=account.cash;account.positions.forEach(function(p){v+=p.qty*prOf(p.id)});return v;}
@@ -2953,6 +2961,9 @@ function runBot(){if(!bot.on)return;
     // Don't create if already have a trailing buy for this asset or already own it
     if(bot._trailingBuys.find(function(tb){return tb.id===m.id}))return;
     if(account.positions.find(function(p){return p.id===m.id}))return;
+    // Don't set trailing buys for assets in loss cooldown
+    var _lmTB=bot.lossMemory[m.id];
+    if(_lmTB&&now<_lmTB.cooldownUntil){return;}
     var pr=prOf(m.id);if(!pr)return;
     var target=pr*(1-trailBuyPct);
     bot._trailingBuys.push({id:m.id,sym:m.sym,signalPrice:pr,targetPrice:target,conf:m.conf,strat:m.strat,created:Date.now()});
@@ -2969,24 +2980,45 @@ function runBot(){if(!bot.on)return;
     for(var ci=0;ci<candidates.length;ci++){
       var id=candidates[ci];
       var multi=buys[id]>=2,highConf=bestSig[id]&&bestSig[id].conf>=75;
-      // Task 3a: Cooldown check
+      // Task 3a: Cooldown check (base 5 minutes)
       if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago','warning');continue;}
+      // Loss memory check: extended cooldown + require multi-strategy agreement after a recent loss
+      var _lm=bot.lossMemory[id];
+      if(_lm&&now<_lm.cooldownUntil){
+        var _lmRemain=Math.round((_lm.cooldownUntil-now)/60000);
+        blog('LOSS COOLDOWN: Skipping '+bestSig[id].sym+' — stopped out '+Math.round((now-_lm.ts)/60000)+'min ago ('+_lm.reason+', '+_lm.pnlPct.toFixed(1)+'%). '+_lmRemain+'min remaining.','warning');
+        continue;
+      }
+      if(_lm&&(now-_lm.ts)<3600000&&!multi){
+        // Within 1 hour of a loss: REQUIRE 2+ strategies to agree (single high-conf signal not enough)
+        blog('LOSS GUARD: Skipping '+bestSig[id].sym+' — only '+buys[id]+' strategy signal(s) but asset stopped out '+Math.round((now-_lm.ts)/60000)+'min ago. Need 2+ strategies to re-enter after a loss.','warning');
+        continue;
+      }
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+', vol adj: '+va.toFixed(2)+'x)]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
+      // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
+      var _lossAdj=1.0;
+      if(_lm&&(now-_lm.ts)<7200000){_lossAdj=0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
+      buyAmt=buyAmt*_lossAdj;
+      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+', vol adj: '+va.toFixed(2)+'x'+((_lossAdj<1)?', loss adj: 0.5x':'')+')]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
       _justBoughtThisTick[id]=true;
-      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
+      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x'+((_lossAdj<1)?', loss adj: 0.5x':'')+')');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[id]=now;}
       return;}
   } else {
     // Batch 8 Task 4c: Sort by momentum score
     var stMoves=moves.filter(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})
-      &&!(bot.cooldowns[x.id]&&(now-bot.cooldowns[x.id])<300000)});
+      &&!(bot.cooldowns[x.id]&&(now-bot.cooldowns[x.id])<300000)
+      // Loss memory: block re-entry during extended cooldown
+      &&!(bot.lossMemory[x.id]&&now<bot.lossMemory[x.id].cooldownUntil)});
     stMoves.sort(function(a,b){return(_momScores[b.id]||50)-(_momScores[a.id]||50)});
     var m=stMoves[0];
     if(m){
       var kr=calcKellySize(m.conf);var va=getVolAdjust(m.id);buyAmt=kr.size*regimeMultiplier*va;
+      // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
+      var _lm2=bot.lossMemory[m.id];
+      if(_lm2&&(now-_lm2.ts)<7200000){buyAmt=buyAmt*0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
       _justBoughtThisTick[m.id]=true;
       blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+', vol: '+va.toFixed(2)+'x)]','trade');
       var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
@@ -4332,7 +4364,7 @@ function saveState(){
     localStorage.setItem('ct_portfolio_value',portVal().toFixed(2));
     localStorage.setItem('ct_account',JSON.stringify({cash:account.cash,start:account.start,positions:account.positions,trades:account.trades.slice(0,50),dayPnL:account.dayPnL,fees:account.fees}));
     localStorage.setItem('ct_bot',JSON.stringify({on:bot.on,strat:bot.strat,pnl:bot.pnl,trades:bot.trades,logs:bot.logs.slice(0,20),
-      stratWeights:bot.stratWeights,consecutiveLosses:bot.consecutiveLosses,cooldowns:bot.cooldowns}));
+      stratWeights:bot.stratWeights,consecutiveLosses:bot.consecutiveLosses,cooldowns:bot.cooldowns,lossMemory:bot.lossMemory}));
     localStorage.setItem('ct_pending_orders',JSON.stringify(pendingOrders));
     localStorage.setItem('ct_mkt',mkt);
     localStorage.setItem('ct_rsize',gv('r-size'));localStorage.setItem('ct_rsl',gv('r-sl'));
@@ -4358,6 +4390,7 @@ function loadState(){
         if(b.stratWeights)bot.stratWeights=b.stratWeights;
         if(b.consecutiveLosses)bot.consecutiveLosses=b.consecutiveLosses;
         if(b.cooldowns)bot.cooldowns=b.cooldowns;
+        if(b.lossMemory)bot.lossMemory=b.lossMemory;
         // Auto-restart bot only if no Supabase (Supabase handles restart in onLogin)
         if(b.on){setTimeout(function(){if(typeof startBot==='function')startBot();},2000);}
       }
@@ -6080,7 +6113,7 @@ window.resetPaperAccount=function(customBalance){
   if(bot.on)stopBot();
   // Reset everything
   account.cash=balance;account.start=balance;account.positions=[];account.trades=[];account.dayPnL=0;account.fees=0;
-  bot.pnl=0;bot.trades=0;bot.logs=[];bot.consecutiveLosses=0;bot.cooldowns={};bot._trailingBuys=[];
+  bot.pnl=0;bot.trades=0;bot.logs=[];bot.consecutiveLosses=0;bot.cooldowns={};bot.lossMemory={};bot._trailingBuys=[];
   equityCurve=[];_tradeJournal=[];
   // Reset strategy weights to default
   for(var k in bot.stratWeights)bot.stratWeights[k]=1.0;
