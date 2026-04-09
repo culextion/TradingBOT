@@ -2711,8 +2711,12 @@ function runBot(){if(!bot.on)return;
   // Task 3c: Market regime detection — adjust risk in bearish regimes
   var regime=detectMarketRegime();
   var regimeMultiplier=1.0;
-  if(regime.bearish){
-    regimeMultiplier=0.5; // Halve position size in bear markets
+  if(regime.strongBear){
+    regimeMultiplier=0; // BLOCK all new buys in strong bear market (>5% down)
+    if(bot.tickCount%6===0)blog('STRONG BEAR MARKET — all new buys blocked ('+regime.change.toFixed(1)+'% decline)','warning');
+  } else if(regime.bearish){
+    regimeMultiplier=0.3; // 70% reduction in bear markets (was 50%)
+    if(bot.tickCount%12===0)blog('Bear market — position sizes reduced 70% ('+regime.downCount+'/'+getWL().length+' assets down)','warning');
   }
 
   // Volatility-adjusted sizing: reduce size in high-vol, increase in low-vol
@@ -2957,9 +2961,9 @@ function runBot(){if(!bot.on)return;
     return true;
   });
 
-  // Create new trailing buys for high-confidence signals (place order 1.5% below)
+  // Create new trailing buys for high-confidence signals (NOT on downtrending assets)
   var trailBuyPct=0.015; // Buy 1.5% below current price
-  moves.filter(function(m){return m.dir==='buy'&&m.conf>=75}).forEach(function(m){
+  moves.filter(function(m){return m.dir==='buy'&&m.conf>=75&&!isAssetDowntrending(m.id)}).forEach(function(m){
     // Don't create if already have a trailing buy for this asset or already own it
     if(bot._trailingBuys.find(function(tb){return tb.id===m.id}))return;
     if(account.positions.find(function(p){return p.id===m.id}))return;
@@ -2996,6 +3000,14 @@ function runBot(){if(!bot.on)return;
         blog('LOSS GUARD: Skipping '+bestSig[id].sym+' — only '+buys[id]+' strategy signal(s) but asset stopped out '+Math.round((now-_lm.ts)/60000)+'min ago. Need 2+ strategies to re-enter after a loss.','warning');
         continue;
       }
+      // TREND FILTER: Don't buy assets in active downtrends unless very high confidence
+      if(isAssetDowntrending(id)){
+        if(!multi||m.conf<80){
+          blog('TREND FILTER: Skipping '+bestSig[id].sym+' — asset is downtrending (price < SMA20, 24h negative). Need 2+ strategies AND 80%+ conf to override.','warning');
+          continue;
+        }
+        blog('TREND OVERRIDE: '+bestSig[id].sym+' — downtrending but strong signal ('+buys[id]+' strategies, '+Math.round(m.conf)+'% conf)','info');
+      }
       var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
@@ -3012,8 +3024,9 @@ function runBot(){if(!bot.on)return;
     // Batch 8 Task 4c: Sort by momentum score
     var stMoves=moves.filter(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})
       &&!(bot.cooldowns[x.id]&&(now-bot.cooldowns[x.id])<300000)
-      // Loss memory: block re-entry during extended cooldown
-      &&!(bot.lossMemory[x.id]&&now<bot.lossMemory[x.id].cooldownUntil)});
+      &&!(bot.lossMemory[x.id]&&now<bot.lossMemory[x.id].cooldownUntil)
+      // TREND FILTER: block buys on downtrending assets
+      &&!isAssetDowntrending(x.id)});
     stMoves.sort(function(a,b){return(_momScores[b.id]||50)-(_momScores[a.id]||50)});
     var m=stMoves[0];
     if(m){
@@ -3427,11 +3440,34 @@ function renderPnLChart(){
 function detectMarketRegime(){
   var benchId=mkt==='crypto'?'bitcoin':'spy';
   var ch=chOf(benchId)||0;
-  var regime={bearish:ch<=-3,change:ch};
-  if(regime.bearish){
-    blog('REGIME WARNING: '+(mkt==='crypto'?'BTC':'SPY')+' down '+Math.abs(ch).toFixed(1)+'% in 24h — tightening risk controls');
-  }
+  // Check multiple assets for broad market direction
+  var wla=getWL();
+  var downCount=0,upCount=0;
+  wla.forEach(function(a){var c=chOf(a.id)||0;if(c<-1)downCount++;if(c>1)upCount++;});
+  var majorityDown=downCount>wla.length*0.6; // 60%+ of watchlist is down
+
+  var regime={
+    bearish:ch<=-2||majorityDown, // Bearish: benchmark down 2%+ OR most assets down
+    strongBear:ch<=-5,            // Strong bear: benchmark down 5%+
+    neutral:ch>-2&&ch<2,
+    bullish:ch>=2,
+    change:ch,
+    downCount:downCount,
+    upCount:upCount,
+    marketSentiment:majorityDown?'bearish':(upCount>downCount?'bullish':'neutral')
+  };
   return regime;
+}
+
+// Per-asset trend check: is THIS specific asset in a downtrend?
+function isAssetDowntrending(assetId){
+  var d=mkt==='crypto'?(ohlcDeep[assetId]||ohlc[assetId]):stkData[assetId];
+  if(!d||d.length<20)return false;
+  var pr=d[d.length-1].close;
+  var s20=sma(d,20);
+  var ch=chOf(assetId)||0;
+  // Asset is downtrending if: price below SMA20 AND negative 24h change
+  return pr<s20&&ch<-1;
 }
 
 // ===================== ADAPTIVE CONFIDENCE (Task 3b) =====================
