@@ -827,7 +827,8 @@ select.inp{appearance:auto}
         <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Total Fees Paid</span><span id="set-fees" class="text-ylw font-bold" style="font-size:var(--fs-md)">$0.00</span></div>
         <div class="flex justify-between"><span class="text-t2" style="font-size:var(--fs-sm)">Total Trades</span><span id="set-trades" class="font-bold" style="font-size:var(--fs-md)">0</span></div>
       </div>
-      <button class="btn btn-r w-full" onclick="if(confirm('Reset paper account to $100,000? All positions and trades will be cleared.')){account.cash=100000;account.start=100000;account.positions=[];account.trades=[];account.fees=0;account.dayPnL=0;bot.pnl=0;bot.trades=0;updateHdr();updatePos();updateTradeLog();updateUI();alert('Account reset!')}">Reset Paper Account</button>
+      <div class="mb-2"><label class="text-t2" style="font-size:var(--fs-xs)">Starting Balance $</label><input id="reset-balance" type="number" class="inp" value="100000" min="100" max="999999999999" step="1000"/></div>
+      <button class="btn btn-r w-full" onclick="resetWithCustomBalance()">Reset Paper Account</button>
     </div>
   </div>
 
@@ -2736,11 +2737,17 @@ function runBot(){if(!bot.on)return;
     if(_justBoughtThisTick[pos.id]){return;}
     var holdTime=Date.now()-(pos.entryTime||pos._buyTs||0);
     var isNewPosition=holdTime<MIN_HOLD_MS;
-    // Skip non-emergency sells on positions held less than 15 minutes
-    // ONLY hard stop-loss is allowed on new positions (emergency protection)
-    if(isNewPosition&&pct>-sl){
-      if(bot.tickCount%6===0)blog('HOLD: '+pos.sym+' protected — '+Math.round(holdTime/60000)+'min of '+Math.round(MIN_HOLD_MS/60000)+'min hold (P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(2))+'%)','info');
-      return;
+
+    // ===== UNIVERSAL HOLD PERIOD GATE =====
+    // ALL sells blocked during hold period EXCEPT hard stop-loss (emergency)
+    if(isNewPosition){
+      if(pct<=-sl){
+        blog('EMERGENCY STOP: '+pos.sym+' hit -'+((sl*100).toFixed(0))+'% during hold period — forced exit','trade');
+        sellA(pos.id,null,'Emergency stop-loss at '+((pct*100).toFixed(1))+'% (during '+Math.round(MIN_HOLD_MS/60000)+'min hold)');
+      } else if(bot.tickCount%6===0){
+        blog('HOLD: '+pos.sym+' protected — '+Math.round(holdTime/60000)+'/'+Math.round(MIN_HOLD_MS/60000)+'min (P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(2))+'%)','info');
+      }
+      return; // BLOCK all trailing stops, profit ladder, signal sells
     }
     if(!pos.highWater||pr>pos.highWater)pos.highWater=pr;
     var trailPct=pos.highWater?(pr-pos.highWater)/pos.highWater:0;
@@ -6066,19 +6073,41 @@ function renderCustomPresets(){
 setTimeout(renderCustomPresets,1000);
 
 // Task 4b: Reset paper account
-window.resetPaperAccount=function(){
-  var balance=account.start||100000;
-  if(!confirm('Reset paper account to $'+fp(balance)+'?\n\nAll positions and trades will be permanently cleared.\n\nThis cannot be undone.'))return;
-  account.cash=balance;account.positions=[];account.trades=[];account.dayPnL=0;account.fees=0;
-  bot.pnl=0;bot.trades=0;equityCurve=[];
+window.resetPaperAccount=function(customBalance){
+  var balance=customBalance||account.start||100000;
+  if(!confirm('Reset paper account to $'+fp(balance)+'?\n\nAll positions, trades, and bot history will be permanently cleared.\n\nThis cannot be undone.'))return;
+  // Stop bot first
+  if(bot.on)stopBot();
+  // Reset everything
+  account.cash=balance;account.start=balance;account.positions=[];account.trades=[];account.dayPnL=0;account.fees=0;
+  bot.pnl=0;bot.trades=0;bot.logs=[];bot.consecutiveLosses=0;bot.cooldowns={};bot._trailingBuys=[];
+  equityCurve=[];_tradeJournal=[];
+  // Reset strategy weights to default
+  for(var k in bot.stratWeights)bot.stratWeights[k]=1.0;
+  // Clear localStorage
+  localStorage.removeItem('ct_account');localStorage.removeItem('ct_bot');localStorage.removeItem('ct_trade_journal');localStorage.removeItem('ct_prices');
+  // Sync to Supabase
   if(SB.user&&SB.accountId){
     SB.updateCash(balance);
     SB.savePositions([]);
-    // Delete trades for this account
-    SB.client.from('trades').delete().eq('account_id',SB.accountId);
+    SB.client.from('trades').delete().eq('account_id',SB.accountId).then(function(){});
+    SB.client.from('bot_logs').delete().eq('user_id',SB.user.id).then(function(){});
+    SB.saveSettings();
   }
+  // Save fresh state
+  saveState();
+  // Update all UI
   updateHdr();updatePos();updateTradeLog();updateUI();renderAllocation();renderAssetPnL();
+  var el=document.getElementById('bot-log');if(el)el.innerHTML='';
   showToast('Account reset to $'+fp(balance),'info');
+  blog('Account reset to $'+fp(balance)+' — all history cleared','info');
+};
+
+window.resetWithCustomBalance=function(){
+  var input=document.getElementById('reset-balance');
+  var balance=input?parseFloat(input.value):100000;
+  if(isNaN(balance)||balance<100){showToast('Enter a valid amount ($100 minimum)','warn');return;}
+  resetPaperAccount(balance);
 };
 
 // Task 4c: Bot trading schedule
