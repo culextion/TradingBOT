@@ -822,7 +822,7 @@ select.inp{appearance:auto}
     <div class="ph"><span>Paper Trading Account</span></div>
     <div class="pb p-4 space-y-3">
       <div class="bg-s2 rounded-lg p-3">
-        <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Starting Balance</span><span class="font-bold" style="font-size:var(--fs-md)">$100,000.00</span></div>
+        <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Starting Balance</span><span id="set-start-bal" class="font-bold" style="font-size:var(--fs-md)">$100,000.00</span></div>
         <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Current Balance</span><span id="set-cur-bal" class="font-bold text-grn" style="font-size:var(--fs-md)">$100,000.00</span></div>
         <div class="flex justify-between mb-1"><span class="text-t2" style="font-size:var(--fs-sm)">Total Fees Paid</span><span id="set-fees" class="text-ylw font-bold" style="font-size:var(--fs-md)">$0.00</span></div>
         <div class="flex justify-between"><span class="text-t2" style="font-size:var(--fs-sm)">Total Trades</span><span id="set-trades" class="font-bold" style="font-size:var(--fs-md)">0</span></div>
@@ -2272,7 +2272,9 @@ function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||am
     time:blogFmtTime(new Date()),ts:Date.now(),reason:reason||null,notes:''};
   account.trades.unshift(t);bot.trades++;
   showToast('[BUY] '+sym+' x '+qty.toFixed(4)+' @ $'+fp(pr),'buy');
-  updateHdr();updatePos();updateTradeLog();updateNextMoves();return t;}
+  updateHdr();updatePos();updateTradeLog();updateNextMoves();
+  saveState();syncToCloud(); // Immediate cloud sync on every buy
+  return t;}
 
 window.sellA=function(id,qty,reason){var pos=account.positions.find(function(p){return p.id===id});if(!pos){if(bot.on)blog('Sell skipped: no position for '+id,'warning');return null;}
   if(pos._selling){blog('Sell skipped: already closing '+pos.sym,'warning');return null;}pos._selling=true;
@@ -4035,7 +4037,8 @@ window.showPage=function(p,btn){
     var ue=document.getElementById('set-user-email');if(ue)ue.textContent=SB.user?SB.user.email:'Not signed in';
     var si=document.getElementById('set-signin-btn');var so=document.getElementById('set-signout-btn');
     if(si)si.style.display=SB.user?'none':'';if(so)so.style.display=SB.user?'':'none';
-    setText('set-cur-bal','$'+fp(portVal()));setText('set-fees','$'+fp(account.fees));setText('set-trades',account.trades.length+'');
+    setText('set-start-bal','$'+fp(account.start));setText('set-cur-bal','$'+fp(portVal()));setText('set-fees','$'+fp(account.fees));setText('set-trades',account.trades.length+'');
+    var resetInput=document.getElementById('reset-balance');if(resetInput)resetInput.value=account.start;
     loadScheduleUI();loadNotifPrefsUI();updateScheduleStatus();
   }};
 
@@ -4409,16 +4412,24 @@ function loadState(){
     var sps=localStorage.getItem('ct_pos_sizing');if(sps){_positionSizingMode=sps;var pse=document.getElementById('pos-sizing-mode');if(pse)pse.value=sps;}
   }catch(e){console.error('loadState error:',e)}
 }
-// Auto-save every 10 seconds (localStorage + Supabase)
+// Immediate cloud sync function — call after ANY state change
+function syncToCloud(){
+  if(!SB.user)return;
+  SB.saveSettings().catch(function(){});
+  SB.updateCash(account.cash).catch(function(){});
+  SB.savePositions(account.positions).catch(function(){});
+  if(typeof SB.savePendingOrders==='function')SB.savePendingOrders().catch(function(){});
+  if(typeof SB.savePriceAlerts==='function')SB.savePriceAlerts().catch(function(){});
+}
+
+// Auto-save every 10 seconds (localStorage cache + Supabase cloud)
 setInterval(function(){
-  saveState();
-  // Sync full state to Supabase every 15 seconds if logged in
-  if(SB.user&&Date.now()-(window._lastSBSync||0)>15000){
+  saveState(); // localStorage cache (speed only)
+  // Sync to Supabase every 10 seconds
+  if(SB.user&&Date.now()-(window._lastSBSync||0)>10000){
     window._lastSBSync=Date.now();
-    SB.saveSettings().catch(function(e){console.warn('Settings sync failed:',e)});
-    SB.updateCash(account.cash).catch(function(){});
-    SB.savePositions(account.positions).catch(function(){});
-    // Also save trades (last 50) so other devices see trade history
+    syncToCloud();
+    // Sync new trades
     if(account.trades.length>0){
       var latestTrade=account.trades[0];
       if(latestTrade&&latestTrade._synced!==true){
@@ -6119,9 +6130,10 @@ window.resetPaperAccount=function(customBalance){
   for(var k in bot.stratWeights)bot.stratWeights[k]=1.0;
   // Clear localStorage
   localStorage.removeItem('ct_account');localStorage.removeItem('ct_bot');localStorage.removeItem('ct_trade_journal');localStorage.removeItem('ct_prices');
-  // Sync to Supabase
+  // Sync to Supabase — update BOTH cash AND starting_balance
   if(SB.user&&SB.accountId){
     SB.updateCash(balance);
+    SB.client.from('paper_accounts').update({cash:balance,starting_balance:balance}).eq('id',SB.accountId).then(function(){});
     SB.savePositions([]);
     SB.client.from('trades').delete().eq('account_id',SB.accountId).then(function(){});
     SB.client.from('bot_logs').delete().eq('user_id',SB.user.id).then(function(){});
@@ -6129,8 +6141,14 @@ window.resetPaperAccount=function(customBalance){
   }
   // Save fresh state
   saveState();
-  // Update all UI
+  // Update ALL UI including Settings page
   updateHdr();updatePos();updateTradeLog();updateUI();renderAllocation();renderAssetPnL();
+  // Update Settings page elements directly
+  setText('set-start-bal','$'+fp(balance));
+  setText('set-cur-bal','$'+fp(balance));
+  setText('set-fees','$0.00');
+  setText('set-trades','0');
+  var resetInput=document.getElementById('reset-balance');if(resetInput)resetInput.value=balance;
   var el=document.getElementById('bot-log');if(el)el.innerHTML='';
   showToast('Account reset to $'+fp(balance),'info');
   blog('Account reset to $'+fp(balance)+' — all history cleared','info');
