@@ -2898,7 +2898,7 @@ function runBot(){if(!bot.on)return;
   var maxP=parseInt(gv('r-max')||5);if(account.positions.length>=maxP)return;
   // Batch 8: Smart position sizing
   var _kResult=calcKellySize(75); // default conf; will be recalculated per signal
-  var buyAmt=_kResult.size*regimeMultiplier;
+  var buyAmt=Math.min(_kResult.size*regimeMultiplier,portVal()*(parseFloat(gv('r-size')||10)/100));
   // Update position sizing info display
   var psiEl=document.getElementById('pos-sizing-info');
   if(psiEl){
@@ -2956,7 +2956,8 @@ function runBot(){if(!bot.on)return;
     if(pr<=tb.targetPrice){
       blog('TRAILING BUY FILLED: '+tb.sym+' at $'+fp(pr)+' (target was $'+fp(tb.targetPrice)+', saved '+((1-pr/tb.signalPrice)*100).toFixed(1)+'%)','trade');
       var kr=calcKellySize(tb.conf);
-      buyA(tb.id,kr.size,'Trailing buy filled at $'+fp(pr)+' (signal at $'+fp(tb.signalPrice)+', conf: '+Math.round(tb.conf)+'%, strategy: '+tb.strat+')');
+      var tbSize=Math.min(kr.size,portVal()*(parseFloat(gv('r-size')||10)/100)); // Hard cap
+      buyA(tb.id,tbSize,'Trailing buy filled at $'+fp(pr)+' (signal at $'+fp(tb.signalPrice)+', conf: '+Math.round(tb.conf)+'%, strategy: '+tb.strat+')');
       return false;
     }
     return true;
@@ -3035,6 +3036,9 @@ function runBot(){if(!bot.on)return;
       if(engineVerdict)reason+=' [Engines: '+engineVerdict.consensus+']';
       // Batch 8: Per-signal position sizing
       var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
+      // HARD CAP: Never exceed the user's position size % setting
+      var _hardCap=portVal()*(parseFloat(gv('r-size')||10)/100);
+      if(buyAmt>_hardCap)buyAmt=_hardCap;
       // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
       var _lossAdj=1.0;
       if(_lm&&(now-_lm.ts)<7200000){_lossAdj=0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
@@ -3055,6 +3059,9 @@ function runBot(){if(!bot.on)return;
     var m=stMoves[0];
     if(m){
       var kr=calcKellySize(m.conf);var va=getVolAdjust(m.id);buyAmt=kr.size*regimeMultiplier*va;
+      // HARD CAP: Never exceed the user's position size % setting
+      var _hardCap2=portVal()*(parseFloat(gv('r-size')||10)/100);
+      if(buyAmt>_hardCap2)buyAmt=_hardCap2;
       // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
       var _lm2=bot.lossMemory[m.id];
       if(_lm2&&(now-_lm2.ts)<7200000){buyAmt=buyAmt*0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
