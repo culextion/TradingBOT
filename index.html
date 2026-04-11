@@ -4497,17 +4497,22 @@ function loadState(){
         if(b.on){setTimeout(function(){if(typeof startBot==='function')startBot();},2000);}
       }
     } else {
-      console.log('Supabase session detected — waiting for cloud sync (localStorage skipped for account/bot data)');
-      // Still load UI preferences from localStorage (these are device-specific)
+      console.log('Supabase session detected — ALL data will come from cloud. localStorage ignored.');
+      // Don't load ANYTHING from localStorage — onLogin() will load everything from Supabase
+      // Only load theme (truly device-specific visual preference)
     }
 
-    // Always load UI preferences from localStorage (device-specific settings)
-    var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
-    var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
-    var sfc=localStorage.getItem('ct_fee_crypto');if(sfc){var el=document.getElementById('fee-sel-crypto');if(el)el.value=sfc;}
-    var sfs=localStorage.getItem('ct_fee_stocks');if(sfs){var el=document.getElementById('fee-sel-stocks');if(el)el.value=sfs;}
-    var rv=function(k,id){var v=localStorage.getItem(k);if(v){var el=document.getElementById(id);if(el)el.value=v;}};
-    rv('ct_rsize','r-size');rv('ct_rsl','r-sl');rv('ct_rtp','r-tp');rv('ct_rmax','r-max');rv('ct_rdll','r-dll');rv('ct_rtrail','r-trail');
+    // Only load device-specific visual preferences from localStorage
+    // Everything else (strategy, fees, risk controls) comes from Supabase via onLogin()
+    if(!hasSupabaseSession){
+      // No cloud — use localStorage for everything
+      var sm=localStorage.getItem('ct_mkt');if(sm)mkt=sm;
+      var ss=localStorage.getItem('ct_strat');if(ss){var el=document.getElementById('strat-sel');if(el)el.value=ss;}
+      var sfc=localStorage.getItem('ct_fee_crypto');if(sfc){var el=document.getElementById('fee-sel-crypto');if(el)el.value=sfc;}
+      var sfs=localStorage.getItem('ct_fee_stocks');if(sfs){var el=document.getElementById('fee-sel-stocks');if(el)el.value=sfs;}
+      var rv=function(k,id){var v=localStorage.getItem(k);if(v){var el=document.getElementById(id);if(el)el.value=v;}};
+      rv('ct_rsize','r-size');rv('ct_rsl','r-sl');rv('ct_rtp','r-tp');rv('ct_rmax','r-max');rv('ct_rdll','r-dll');rv('ct_rtrail','r-trail');
+    }
     var sps=localStorage.getItem('ct_pos_sizing');if(sps){_positionSizingMode=sps;var pse=document.getElementById('pos-sizing-mode');if(pse)pse.value=sps;}
   }catch(e){console.error('loadState error:',e)}
 }
@@ -6831,8 +6836,16 @@ loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
 // Fetch prices for ALL held positions (cross-market) on load and every 30s
 setTimeout(fetchHeldPositionPrices, 2000);
-// Safety: dismiss loading screen after 8 seconds even if data is slow
-setTimeout(function(){loadProgress(100,'Ready');dismissLoading()},8000);
+// Safety: dismiss loading screen — but wait for Supabase if session exists
+setTimeout(function(){
+  if(!window._supabaseSynced&&SUPABASE_URL){
+    loadProgress(90,'Waiting for cloud sync...');
+    // Give Supabase 5 more seconds
+    setTimeout(function(){loadProgress(100,'Ready');dismissLoading()},5000);
+  } else {
+    loadProgress(100,'Ready');dismissLoading();
+  }
+},5000);
 setInterval(fetchHeldPositionPrices, 30000);
 // Track initial equity point once prices are loaded (regardless of bot state)
 setTimeout(function(){trackEquity();},8000);

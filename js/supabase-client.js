@@ -94,10 +94,21 @@ var SB = {
       // Sync cloud state back to localStorage so offline/refresh works correctly
       if (typeof saveState === 'function') saveState();
       console.log('Cloud sync complete — account: $' + (typeof account !== 'undefined' ? account.cash : '?') + ', positions: ' + (typeof account !== 'undefined' ? account.positions.length : '?'));
-    } catch(e) { console.error('Sync error on login:', e); }
-    // Update UI
+      // Mark sync as done — this is the ONLY true data now
+      window._supabaseSynced = true;
+    } catch(e) { console.error('Sync error on login:', e); window._supabaseSynced = true; }
+    // Update ALL UI with cloud data
     if (typeof updateAuthUI === 'function') updateAuthUI(true);
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof updateHdr === 'function') updateHdr();
+    if (typeof updatePos === 'function') updatePos();
+    if (typeof updateTradeLog === 'function') updateTradeLog();
+    if (typeof renderAllocation === 'function') renderAllocation();
+    if (typeof renderAssetPnL === 'function') renderAssetPnL();
     if (typeof showSyncStatus === 'function') showSyncStatus('Synced');
+    if (typeof dismissLoading === 'function') dismissLoading();
+    // Save cloud state to localStorage so it's correct for this profile
+    if (typeof saveState === 'function') saveState();
     setTimeout(function() { if (typeof showSyncStatus === 'function') showSyncStatus(''); }, 2000);
   },
 
