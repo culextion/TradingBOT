@@ -1686,8 +1686,20 @@ function updateSig(){var el=document.getElementById('c-sig');if(!el)return;
   var mtfBlock=mtfHtml?'<div class="mb-2"><div class="text-t2 font-bold uppercase mb-1" style="font-size:8px;letter-spacing:.5px">Timeframe Agreement</div>'+mtfHtml+'</div>':'';
 
   // Generate REAL signals from market data
-  var moves=analyzeMarket();
-  if(!moves.length){el.innerHTML=mtfBlock+'<div class="text-t2 text-xs text-center py-4">Analyzing markets... signals will appear as data loads.</div>';return;}
+  // Use DecisionBoard for signal display instead of old analyzeMarket
+  var moves=[];
+  var regime=typeof detectMarketRegime==='function'?detectMarketRegime():{};
+  getWL().forEach(function(a){
+    var d=mkt==='crypto'?(ohlcDeep[a.id]||ohlc[a.id]):stkData[a.id];
+    if(!d||d.length<20)return;
+    var v=DecisionBoard.evaluate(a.id,d,prices,account.positions,regime,typeof _newsCache!=='undefined'?_newsCache:[]);
+    if(v.decision!=='HOLD'){
+      moves.push({sym:a.sym,id:a.id,dir:v.decision.toLowerCase(),conf:v.confidence,
+        reason:v.engines.map(function(e){return e.engine+'='+e.signal+'('+e.conf+'%)'}).join(', '),
+        strat:'engines',consensus:v.consensus,vetoed:v.vetoed,engines:v.engines});
+    }
+  });
+  if(!moves.length){el.innerHTML=mtfBlock+'<div class="text-t2 text-xs text-center py-4">All 5 engines monitoring... no consensus signals yet.</div>';return;}
   // Show trailing buy orders if any
   var tbHtml='';
   if(bot._trailingBuys&&bot._trailingBuys.length){
@@ -2817,8 +2829,14 @@ function runBot(){if(!bot.on)return;
       }
     }});
 
-  // Signal-based sell logic — check sell signals from analyzeMarket for held positions
-  var _sellMoves=analyzeMarket().filter(function(m){return m.dir==='sell'});
+  // Signal-based sell logic — use DecisionBoard for held positions
+  var _sellMoves=[];
+  account.positions.forEach(function(pos){
+    var d=mkt==='crypto'?(ohlcDeep[pos.id]||ohlc[pos.id]):stkData[pos.id];
+    if(!d||d.length<20)return;
+    var verdict=DecisionBoard.evaluate(pos.id,d,prices,account.positions,regime,typeof _newsCache!=='undefined'?_newsCache:[]);
+    if(verdict.decision==='SELL'){_sellMoves.push({id:pos.id,sym:pos.sym,dir:'sell',conf:verdict.confidence,reason:verdict.consensus,strat:'engines',engines:verdict.engines});}
+  });
   if(_sellMoves.length){
     var _minProfitPct=Math.min(2,tp*100)/100; // Min 2% or TP setting, whichever is lower
     account.positions.slice().forEach(function(pos){
@@ -3026,82 +3044,39 @@ function runBot(){if(!bot.on)return;
     }
   });
 
-  if(bot.strat==='hybrid'){
-    var buys={},bestSig={};
-    moves.forEach(function(m){if(m.dir==='buy'){buys[m.id]=(buys[m.id]||0)+1;if(!bestSig[m.id]||m.conf>bestSig[m.id].conf)bestSig[m.id]=m;}});
-    // Batch 8: Sort candidates by momentum score (prefer higher momentum assets)
-    var candidates=Object.keys(buys).filter(function(id){
-      return (buys[id]>=2||(bestSig[id]&&bestSig[id].conf>=75))&&!account.positions.find(function(p){return p.id===id});
-    }).sort(function(a,b){return(_momScores[b]||50)-(_momScores[a]||50)});
+  if(bot.strat==='hybrid'||true){ // ALL strategies now use DecisionBoard
+    // ===== NEW: DecisionBoard is the ONLY buy decision maker =====
+    // Collect all assets where engines voted BUY
+    var candidates=Object.keys(_engineResults).filter(function(id){
+      return _engineResults[id].decision==='BUY'&&_engineResults[id].agreeing>=3;
+    }).sort(function(a,b){return(_engineResults[b].confidence||0)-(_engineResults[a].confidence||0)});
     for(var ci=0;ci<candidates.length;ci++){
       var id=candidates[ci];
-      var multi=buys[id]>=2,highConf=bestSig[id]&&bestSig[id].conf>=75;
-      // Task 3a: Cooldown check (base 5 minutes)
-      if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+bestSig[id].sym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago','warning');continue;}
-      // Loss memory check: extended cooldown + require multi-strategy agreement after a recent loss
+      var ev=_engineResults[id]; // Engine verdict — already confirmed BUY with 3+ engines
+      var assetSym=(findA(id)||{sym:id}).sym;
+
+      // Cooldown check
+      if(bot.cooldowns[id]&&(now-bot.cooldowns[id])<300000){blog('COOLDOWN: Skipping '+assetSym+' — traded '+(Math.round((now-bot.cooldowns[id])/1000))+'s ago','warning');continue;}
+
+      // Loss memory check
       var _lm=bot.lossMemory[id];
-      if(_lm&&now<_lm.cooldownUntil){
-        var _lmRemain=Math.round((_lm.cooldownUntil-now)/60000);
-        blog('LOSS COOLDOWN: Skipping '+bestSig[id].sym+' — stopped out '+Math.round((now-_lm.ts)/60000)+'min ago ('+_lm.reason+', '+_lm.pnlPct.toFixed(1)+'%). '+_lmRemain+'min remaining.','warning');
-        continue;
-      }
-      if(_lm&&(now-_lm.ts)<3600000&&!multi){
-        // Within 1 hour of a loss: REQUIRE 2+ strategies to agree (single high-conf signal not enough)
-        blog('LOSS GUARD: Skipping '+bestSig[id].sym+' — only '+buys[id]+' strategy signal(s) but asset stopped out '+Math.round((now-_lm.ts)/60000)+'min ago. Need 2+ strategies to re-enter after a loss.','warning');
-        continue;
-      }
-      // TREND FILTER: Don't buy assets in active downtrends unless very high confidence
-      if(isAssetDowntrending(id)){
-        if(!multi||m.conf<80){
-          blog('TREND FILTER: Skipping '+bestSig[id].sym+' — asset is downtrending (price < SMA20, 24h negative). Need 2+ strategies AND 80%+ conf to override.','warning');
-          continue;
-        }
-        blog('TREND OVERRIDE: '+bestSig[id].sym+' — downtrending but strong signal ('+buys[id]+' strategies, '+Math.round(m.conf)+'% conf)','info');
-      }
-      // MULTI-ENGINE GATE: DecisionBoard must also approve
-      var engineVerdict=_engineResults[id];
-      if(engineVerdict&&engineVerdict.decision!=='BUY'){
-        blog('ENGINE BLOCK: '+bestSig[id].sym+' — DecisionBoard says '+engineVerdict.decision+' ('+engineVerdict.consensus+')','warning');
-        continue;
-      }
-      var m=bestSig[id];var reason=multi?'Multiple strategies agree':'High confidence signal ('+Math.round(m.conf)+'%)';
-      if(engineVerdict)reason+=' [Engines: '+engineVerdict.consensus+']';
-      // Batch 8: Per-signal position sizing
-      var kr=calcKellySize(m.conf);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
-      // HARD CAP: Never exceed the user's position size % setting
+      if(_lm&&now<_lm.cooldownUntil){blog('LOSS COOLDOWN: Skipping '+assetSym+' — '+Math.round((_lm.cooldownUntil-now)/60000)+'min remaining','warning');continue;}
+      if(_lm&&(now-_lm.ts)<3600000&&ev.agreeing<4){blog('LOSS GUARD: Skipping '+assetSym+' — need 4+ engines (have '+ev.agreeing+') after recent loss','warning');continue;}
+      // Engine-driven buy — confidence from DecisionBoard consensus
+      var reason='Engines: '+ev.consensus+' ('+ev.engines.map(function(e){return e.engine+'='+e.signal}).join(', ')+')';
+      var kr=calcKellySize(ev.confidence);var va=getVolAdjust(id);buyAmt=kr.size*regimeMultiplier*va;
       var _hardCap=portVal()*(parseFloat(gv('r-size')||10)/100);
       if(buyAmt>_hardCap)buyAmt=_hardCap;
-      // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
       var _lossAdj=1.0;
-      if(_lm&&(now-_lm.ts)<7200000){_lossAdj=0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
+      if(_lm&&(now-_lm.ts)<7200000){_lossAdj=0.5;blog('LOSS ADJ: '+assetSym+' position halved — re-entering after recent loss','info');}
       buyAmt=buyAmt*_lossAdj;
-      blog('HYBRID BUY: '+m.sym+' — '+m.reason+' ['+reason+'] [size: $'+fp(buyAmt)+' ('+kr.method+', vol adj: '+va.toFixed(2)+'x'+((_lossAdj<1)?', loss adj: 0.5x':'')+')]'+((_momScores[id]!==undefined)?' [momentum: '+_momScores[id]+']':''),'trade');
+      blog('ENGINE BUY: '+assetSym+' — '+reason+' [size: $'+fp(buyAmt)+' ('+kr.method+', vol: '+va.toFixed(2)+'x)]','trade');
       _justBoughtThisTick[id]=true;
-      var t=buyA(id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, '+reason+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x'+((_lossAdj<1)?', loss adj: 0.5x':'')+')');
+      var t=buyA(id,buyAmt,'Engine consensus buy: '+reason+' (conf: '+Math.round(ev.confidence)+'%, sizing: '+kr.method+')');
       if(t){t.sizingMethod=kr.method;bot.cooldowns[id]=now;}
       return;}
   } else {
-    // Batch 8 Task 4c: Sort by momentum score
-    var stMoves=moves.filter(function(x){return x.strat===bot.strat&&x.dir==='buy'&&!account.positions.find(function(p){return p.id===x.id})
-      &&!(bot.cooldowns[x.id]&&(now-bot.cooldowns[x.id])<300000)
-      &&!(bot.lossMemory[x.id]&&now<bot.lossMemory[x.id].cooldownUntil)
-      // TREND FILTER: block buys on downtrending assets
-      &&!isAssetDowntrending(x.id)});
-    stMoves.sort(function(a,b){return(_momScores[b.id]||50)-(_momScores[a.id]||50)});
-    var m=stMoves[0];
-    if(m){
-      var kr=calcKellySize(m.conf);var va=getVolAdjust(m.id);buyAmt=kr.size*regimeMultiplier*va;
-      // HARD CAP: Never exceed the user's position size % setting
-      var _hardCap2=portVal()*(parseFloat(gv('r-size')||10)/100);
-      if(buyAmt>_hardCap2)buyAmt=_hardCap2;
-      // Reduce position size by 50% when re-entering after a recent loss (within 2 hours)
-      var _lm2=bot.lossMemory[m.id];
-      if(_lm2&&(now-_lm2.ts)<7200000){buyAmt=buyAmt*0.5;blog('LOSS ADJ: '+m.sym+' position halved — re-entering after recent loss','info');}
-      _justBoughtThisTick[m.id]=true;
-      blog(bot.strat.toUpperCase()+' BUY: '+m.sym+' — '+m.reason+' [size: $'+fp(buyAmt)+' ('+kr.method+', vol: '+va.toFixed(2)+'x)]','trade');
-      var t=buyA(m.id,buyAmt,m.reason+' (conf: '+Math.round(m.conf)+'%, strategy: '+m.strat+', sizing: '+kr.method+', vol: '+va.toFixed(2)+'x)');
-      if(t){t.sizingMethod=kr.method;bot.cooldowns[m.id]=now;}
-    }
+    // Old single-strategy path — DEPRECATED. All strategies now use DecisionBoard above.
   }
   updateNextMoves();
   generateAISummary();
