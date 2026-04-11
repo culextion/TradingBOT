@@ -2253,6 +2253,29 @@ function calcFeeBreakeven(amt,assetId){
 }
 
 function buyA(id,amt,reason){var pr=prOf(id);if(!pr||pr<=0||amt>account.cash||amt<=0)return null;
+  // ===== UNIVERSAL ENGINE GATE — ALL buys must pass through DecisionBoard =====
+  var isManual=reason&&(reason.indexOf('Manual')===0||reason.indexOf('Quick order')===0);
+  if(!isManual&&typeof DecisionBoard!=='undefined'){
+    var d=mkt==='crypto'?(ohlcDeep[id]||ohlc[id]):stkData[id];
+    if(d&&d.length>=20){
+      var regime=typeof detectMarketRegime==='function'?detectMarketRegime():{};
+      var verdict=DecisionBoard.evaluate(id,d,prices,account.positions,regime,typeof _newsCache!=='undefined'?_newsCache:[]);
+      if(verdict.decision!=='BUY'){
+        var sym=(findA(id)||{sym:id}).sym;
+        blog('ENGINE GATE BLOCKED: '+sym+' — DecisionBoard says '+verdict.decision+' ('+verdict.consensus+'). Reason: '+reason,'warning');
+        return null;
+      }
+    }
+  }
+  // ===== HARD CAP: Never exceed position size setting =====
+  var _maxAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
+  if(amt>_maxAmt)amt=_maxAmt;
+  // ===== TREND FILTER: Block buys on downtrending assets =====
+  if(!isManual&&typeof isAssetDowntrending==='function'&&isAssetDowntrending(id)){
+    var sym=(findA(id)||{sym:id}).sym;
+    blog('TREND BLOCK: '+sym+' is downtrending — buy blocked. Reason: '+reason,'warning');
+    return null;
+  }
   var feeProfile=getFeeProfile(id);
   // Pre-trade fee-to-profit check: ensure expected gain justifies round-trip fees
   var feeCheck=calcFeeBreakeven(amt,id);
@@ -2756,9 +2779,11 @@ function runBot(){if(!bot.on)return;
     // ===== UNIVERSAL HOLD PERIOD GATE =====
     // ALL sells blocked during hold period EXCEPT hard stop-loss (emergency)
     if(isNewPosition){
-      if(pct<=-sl){
-        blog('EMERGENCY STOP: '+pos.sym+' hit -'+((sl*100).toFixed(0))+'% during hold period — forced exit','trade');
-        sellA(pos.id,null,'Emergency stop-loss at '+((pct*100).toFixed(1))+'% (during '+Math.round(MIN_HOLD_MS/60000)+'min hold)');
+      // During hold period, use WIDER emergency stop (2x normal) to avoid selling on normal volatility
+      var emergencySL=sl*2; // e.g., if SL=5%, emergency=10% during hold
+      if(pct<=-emergencySL){
+        blog('EMERGENCY STOP: '+pos.sym+' hit -'+((pct*100).toFixed(1))+'% (emergency threshold: -'+((emergencySL*100).toFixed(0))+'%) during hold period','trade');
+        sellA(pos.id,null,'Emergency stop-loss at '+((pct*100).toFixed(1))+'% (2x threshold during '+Math.round(MIN_HOLD_MS/60000)+'min hold)');
       } else if(bot.tickCount%6===0){
         blog('HOLD: '+pos.sym+' protected — '+Math.round(holdTime/60000)+'/'+Math.round(MIN_HOLD_MS/60000)+'min (P&L: '+(pct>=0?'+':'')+((pct*100).toFixed(2))+'%)','info');
       }
@@ -2952,12 +2977,19 @@ function runBot(){if(!bot.on)return;
     var pr=prOf(tb.id);if(!pr)return true; // keep if no price yet
     // Expired (30 min timeout)
     if(Date.now()-tb.created>1800000){blog('Trailing buy expired: '+tb.sym+' — price never reached $'+fp(tb.targetPrice),'info');return false;}
-    // Price hit target — execute buy
+    // Price hit target — RE-CONFIRM with engines before executing
     if(pr<=tb.targetPrice){
-      blog('TRAILING BUY FILLED: '+tb.sym+' at $'+fp(pr)+' (target was $'+fp(tb.targetPrice)+', saved '+((1-pr/tb.signalPrice)*100).toFixed(1)+'%)','trade');
-      var kr=calcKellySize(tb.conf);
-      var tbSize=Math.min(kr.size,portVal()*(parseFloat(gv('r-size')||10)/100)); // Hard cap
-      buyA(tb.id,tbSize,'Trailing buy filled at $'+fp(pr)+' (signal at $'+fp(tb.signalPrice)+', conf: '+Math.round(tb.conf)+'%, strategy: '+tb.strat+')');
+      // Re-run DecisionBoard to confirm the trade is still good
+      var d=mkt==='crypto'?(ohlcDeep[tb.id]||ohlc[tb.id]):stkData[tb.id];
+      var reconfirm=d&&d.length>=20?DecisionBoard.evaluate(tb.id,d,prices,account.positions,regime,_newsCache):null;
+      if(reconfirm&&reconfirm.decision==='BUY'){
+        blog('TRAILING BUY CONFIRMED: '+tb.sym+' at $'+fp(pr)+' — engines approve ('+reconfirm.consensus+')','trade');
+        var kr=calcKellySize(tb.conf);
+        var tbSize=Math.min(kr.size,portVal()*(parseFloat(gv('r-size')||10)/100));
+        buyA(tb.id,tbSize,'Trailing buy filled at $'+fp(pr)+' — engines: '+reconfirm.consensus);
+      } else {
+        blog('TRAILING BUY CANCELLED: '+tb.sym+' — engines say '+(reconfirm?reconfirm.decision:'NO DATA')+'. Price reached target but conditions changed.','warning');
+      }
       return false;
     }
     return true;

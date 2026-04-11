@@ -118,9 +118,13 @@ var TrendEngine = {
     var signal = score > 0.2 ? 'BUY' : score < -0.2 ? 'SELL' : 'HOLD';
     var conf = Math.min(1, Math.abs(score));
 
-    // VETO: Block buys in strong downtrends
-    var veto = false;
-    if (bearishAlignment && haBearish && ch < -2) veto = true;
+    // VETO: Block buys in downtrends — ANY two bearish signals = veto
+    var bearishSignals = 0;
+    if (bearishAlignment) bearishSignals++;
+    if (haBearish) bearishSignals++;
+    if (ch < -1) bearishSignals++;
+    if (trendDown) bearishSignals++;
+    var veto = bearishSignals >= 2; // ANY 2 of 4 bearish indicators = veto
 
     return { engine: 'TREND', signal: signal, confidence: conf, weight: 1.2,
       reason: (trendUp ? 'Uptrend' : trendDown ? 'Downtrend' : 'Sideways') +
@@ -283,8 +287,12 @@ var MemoryEngine = {
     h.totalTrades++;
     if (profitable) { h.wins++; h.streak = Math.max(0, h.streak) + 1; h.lastResult = 'WIN'; }
     else { h.losses++; h.streak = Math.min(0, h.streak) - 1; h.lastResult = 'LOSS'; }
-    // Blacklist after 3 consecutive losses
-    if (h.streak <= -3) { h.blacklisted = true; h.blacklistUntil = Date.now() + 3600000; } // 1 hour blacklist
+    // Blacklist after 3 consecutive losses — escalating duration
+    if (h.streak <= -3) {
+      var hours = Math.min(24, Math.abs(h.streak) * 2); // 6h, 8h, 10h... up to 24h
+      h.blacklisted = true;
+      h.blacklistUntil = Date.now() + hours * 3600000;
+    }
     // Track per-strategy performance
     if (strategy) {
       if (!h.strategies[strategy]) h.strategies[strategy] = { wins: 0, losses: 0 };
