@@ -167,6 +167,13 @@ select.inp{appearance:auto}
 </style>
 </head>
 <body class="dark">
+<!-- LOADING SCREEN — shown until data loads -->
+<div id="app-loading" style="position:fixed;inset:0;background:var(--s0,#0d1117);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s">
+  <svg width="48" height="48" viewBox="0 0 100 100"><path d="M70,22 A38,38 0 1,0 70,78" fill="none" stroke="#e6edf3" stroke-width="10" stroke-linecap="round"/><rect x="25" y="58" width="8" height="16" rx="2" fill="#3fb950" opacity=".6"/><rect x="35" y="50" width="8" height="24" rx="2" fill="#3fb950" opacity=".7"/><rect x="45" y="42" width="8" height="32" rx="2" fill="#3fb950" opacity=".8"/><rect x="55" y="34" width="8" height="40" rx="2" fill="#3fb950" opacity=".9"/><rect x="65" y="26" width="8" height="48" rx="2" fill="#3fb950"/><polyline points="29,58 39,50 49,42 59,34 69,26" fill="none" stroke="#3fb950" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+  <div style="font-family:Inter,system-ui,sans-serif;font-size:18px;font-weight:600;color:#e6edf3">culex<span style="color:#8b949e;font-weight:400">trade</span></div>
+  <div id="loading-status" style="font-size:12px;color:#8b949e">Loading...</div>
+  <div style="width:200px;height:3px;background:#1c2333;border-radius:2px;overflow:hidden"><div id="loading-bar" style="width:0%;height:100%;background:#58a6ff;border-radius:2px;transition:width .3s"></div></div>
+</div>
 <!-- Toast notification container (Task 4a) -->
 <div id="toast-container" class="toast-container"></div>
 
@@ -1528,6 +1535,7 @@ function loadAll(){
       var cryptoSyms=w.map(function(a){return'BINANCE:'+a.sym+'USDT'});
       fhConnectCryptoWS(cryptoSyms);
       setStatus('ok','Prices: Finnhub \u00b7 Charts: CoinGecko — Live');
+      loadProgress(100,'Ready');dismissLoading();
     } else {
       // Generate chart data using real base prices
       w.forEach(function(a){var st=findA(a.id);if(st&&st.base){stkData[a.id]=genStk(st,168);}});
@@ -1536,6 +1544,7 @@ function loadAll(){
       var stockSyms=w.map(function(a){return a.sym});
       fhConnectStockWS(stockSyms);
       setStatus('ok','Prices: Finnhub \u00b7 Charts: Generated — Stocks Live');
+      loadProgress(100,'Ready');dismissLoading();
     }
     updateUI();updateInd();
 
@@ -1902,7 +1911,18 @@ function updateTradeLog(){var el=document.getElementById('trade-log');if(!el)ret
   renderAllocation();renderAssetPnL();}
 
 function updateNextMoves(){var el=document.getElementById('next-moves');if(!el)return;
-  var moves=analyzeMarket();
+  // Use DecisionBoard for next moves display
+  var moves=[];
+  var regime=typeof detectMarketRegime==='function'?detectMarketRegime():{};
+  getWL().forEach(function(a){
+    var d=mkt==='crypto'?(ohlcDeep[a.id]||ohlc[a.id]):stkData[a.id];
+    if(!d||d.length<20)return;
+    var v=DecisionBoard.evaluate(a.id,d,prices,account.positions,regime,typeof _newsCache!=='undefined'?_newsCache:[]);
+    if(v.decision!=='HOLD'){
+      var engBreakdown=v.engines.map(function(e){return e.reason}).join('; ');
+      moves.push({sym:a.sym,id:a.id,dir:v.decision.toLowerCase(),conf:v.confidence,
+        reason:engBreakdown,strat:'engines',consensus:v.consensus});}
+  });
   var buyAmt=portVal()*(parseFloat(gv('r-size')||10)/100);
   el.innerHTML=moves.map(function(m){
     var cc=m.conf>70?'grn':'ylw';
@@ -6764,6 +6784,17 @@ function checkDailyReportTime(){
 // Restore cached prices immediately so portfolio value is correct before API loads
 try{var cp=localStorage.getItem('ct_prices');if(cp){var cached=JSON.parse(cp);for(var k in cached){if(!prices[k])prices[k]=cached[k];}console.log('Restored '+Object.keys(cached).length+' cached prices');}}catch(e){}
 
+// Loading screen progress
+function loadProgress(pct,msg){
+  var bar=document.getElementById('loading-bar');if(bar)bar.style.width=pct+'%';
+  var txt=document.getElementById('loading-status');if(txt)txt.textContent=msg;
+}
+function dismissLoading(){
+  var el=document.getElementById('app-loading');
+  if(el){el.style.opacity='0';setTimeout(function(){el.style.display='none'},500);}
+}
+loadProgress(5,'Initializing...');
+
 ConnGuard.init();
 // Wire ConnGuard events to bot log
 ConnGuard.onEvent(function(type,msg){
@@ -6784,18 +6815,24 @@ ConnGuard.onEvent(function(type,msg){
   else if(type==='offline')blog('Connection lost — browser offline','error');
 });
 try{var sw=localStorage.getItem('tb_wl');if(sw)wl=JSON.parse(sw)}catch(e){}
-loadState(); // Restore account, positions, trades, bot settings
+loadProgress(15,'Restoring state...');
+loadState();
 setInterval(function(){var el=document.getElementById('st-clk');if(el)el.textContent=new Date().toLocaleTimeString()},1000);
 onStratChange();
 loadBotMarkets();
+loadProgress(30,'Starting price feeds...');
 initTicker();
+loadProgress(45,'Scanning markets...');
 initScanner();
 // Restore Coinbase OAuth client ID
 try{var cbId=localStorage.getItem('ct_cb_clientid');if(cbId){CoinbaseAuth.clientId=cbId;var cbInput=document.getElementById('cb-client-id');if(cbInput)cbInput.value=cbId;}}catch(e){}
+loadProgress(60,'Loading market data...');
 loadAll();
 // Fetch prices for ALL held positions (cross-market) after initial load
 // Fetch prices for ALL held positions (cross-market) on load and every 30s
 setTimeout(fetchHeldPositionPrices, 2000);
+// Safety: dismiss loading screen after 8 seconds even if data is slow
+setTimeout(function(){loadProgress(100,'Ready');dismissLoading()},8000);
 setInterval(fetchHeldPositionPrices, 30000);
 // Track initial equity point once prices are loaded (regardless of bot state)
 setTimeout(function(){trackEquity();},8000);
@@ -6847,6 +6884,7 @@ var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 // Batch 9: Store Supabase creds for correlation fetch
 window.SUPABASE_URL_B9=SUPABASE_URL;window.SUPABASE_ANON_B9=SUPABASE_ANON;
 if(SUPABASE_URL && SUPABASE_ANON) {
+  loadProgress(80,'Connecting to cloud...');
   SB.init(SUPABASE_URL, SUPABASE_ANON);
   // Ensure server bot toggle state is restored after login settles
   setTimeout(function(){if(SB.user&&typeof loadServerBotState==='function')loadServerBotState();},4000);
