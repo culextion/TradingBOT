@@ -201,6 +201,13 @@ var SB = {
           }
         } catch(e) { console.error('Error restoring bot state:', e); }
       }
+      // Restore additional cloud-stored data
+      if (data.custom_presets_json) { try { localStorage.setItem('ct_custom_presets', data.custom_presets_json); if (typeof renderCustomPresets === 'function') renderCustomPresets(); } catch(e) {} }
+      if (data.trade_journal_json && typeof _tradeJournal !== 'undefined') { try { _tradeJournal = JSON.parse(data.trade_journal_json); } catch(e) {} }
+      if (data.bot_schedule_json) { try { localStorage.setItem('ct_bot_schedule', data.bot_schedule_json); var bs = JSON.parse(data.bot_schedule_json); if (typeof botSchedule !== 'undefined') Object.assign(botSchedule, bs); } catch(e) {} }
+      if (data.notif_prefs_json) { try { localStorage.setItem('ct_notif_prefs', data.notif_prefs_json); var np = JSON.parse(data.notif_prefs_json); if (typeof notifPrefs !== 'undefined') Object.assign(notifPrefs, np); } catch(e) {} }
+      if (data.target_alloc_json) { try { localStorage.setItem('ct_target_alloc', data.target_alloc_json); } catch(e) {} }
+      if (data.memory_engine_json && typeof MemoryEngine !== 'undefined') { try { MemoryEngine.assetHistory = JSON.parse(data.memory_engine_json); } catch(e) {} }
     }
   },
 
@@ -224,9 +231,19 @@ var SB = {
       bot_state_json: typeof bot !== 'undefined' ? JSON.stringify({
         on: bot.on, strat: bot.strat, pnl: bot.pnl, trades: bot.trades,
         consecutiveLosses: bot.consecutiveLosses, cooldowns: bot.cooldowns,
+        lossMemory: bot.lossMemory || {},
         fee_profile_crypto: typeof gv === 'function' ? gv('fee-sel-crypto') || gv('fee-sel') : 'coinbase_adv',
         fee_profile_stocks: typeof gv === 'function' ? gv('fee-sel-stocks') || gv('fee-sel') : 'alpaca',
+        pos_sizing: typeof _positionSizingMode !== 'undefined' ? _positionSizingMode : 'fixed',
+        scanMode: bot.scanMode || 'watchlist',
       }) : null,
+      // Store everything that was previously in localStorage
+      custom_presets_json: (function(){try{return localStorage.getItem('ct_custom_presets')}catch(e){return null}})(),
+      trade_journal_json: typeof _tradeJournal !== 'undefined' ? JSON.stringify(_tradeJournal.slice(0,50)) : null,
+      bot_schedule_json: (function(){try{return localStorage.getItem('ct_bot_schedule')}catch(e){return null}})(),
+      notif_prefs_json: (function(){try{return localStorage.getItem('ct_notif_prefs')}catch(e){return null}})(),
+      target_alloc_json: (function(){try{return localStorage.getItem('ct_target_alloc')}catch(e){return null}})(),
+      memory_engine_json: typeof MemoryEngine !== 'undefined' ? JSON.stringify(MemoryEngine.assetHistory) : null,
     };
     await this.client.from('user_settings').upsert(settings, { onConflict: 'user_id' });
   },
